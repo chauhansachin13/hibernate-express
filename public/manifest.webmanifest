@@ -1,0 +1,19 @@
+{
+  "id": "/",
+  "name": "Hibernate Express — never miss your stop",
+  "short_name": "Hibernate",
+  "description": "Sleep peacefully on the bus. Live GPS and the real road distance wake you before your stop.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#060b14",
+  "theme_color": "#060b14",
+  "categories": ["travel", "navigation", "utilities"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
