@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+    <title>Hibernate Express — sleep on the bus, we'll wake you before your stop</title>
+    <meta name="description" content="Set your stop, relax, and get a loud alarm before you reach it. Live GPS matched to the real road route. Even Kumbhakaran won't miss his stop now." />
+    <meta name="theme-color" content="#060b14" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Hibernate" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Hibernate Express" />
+    <meta property="og:title" content="Hibernate Express — never miss your bus stop" />
+    <meta property="og:description" content="Sleep peacefully on the bus. We'll wake you before your stop. Even Kumbhakaran won't miss his stop now 😴🔔" />
+    <meta property="og:image" content="https://hibernate-express.netlify.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></symbol>
+      <symbol id="i-locate" viewBox="0 0 24 24"><path d="M2 12h3M19 12h3M12 2v3M12 19v3" /><circle cx="12" cy="12" r="7" /><circle cx="12" cy="12" r="3" /></symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" /><path d="m2 12 8.58 3.91a2 2 0 0 0 1.66 0L21 12" /><path d="m2 17 8.58 3.91a2 2 0 0 0 1.66 0L21 17" /></symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 4.99-5.54 10.19-7.4 11.8a1 1 0 0 1-1.2 0C9.54 20.19 4 14.99 4 10a8 8 0 0 1 16 0" /><circle cx="12" cy="10" r="3" /></symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24"><path d="M10.27 21a2 2 0 0 0 3.46 0" /><path d="M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33" /></symbol>
+      <symbol id="i-bell-ring" viewBox="0 0 24 24"><path d="M10.27 21a2 2 0 0 0 3.46 0" /><path d="M22 8c0-2.3-.8-4.3-2-6" /><path d="M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33" /><path d="M4 2C2.8 3.7 2 5.7 2 8" /></symbol>
+      <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="19" r="3" /><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15" /><circle cx="18" cy="5" r="3" /></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /><path d="m9 12 2 2 4-4" /></symbol>
+      <symbol id="i-bus" viewBox="0 0 24 24"><path d="M8 6v6M15 6v6M2 12h19.6" /><path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3" /><circle cx="7" cy="18" r="2" /><path d="M9 18h5" /><circle cx="16" cy="18" r="2" /></symbol>
+      <symbol id="i-train" viewBox="0 0 24 24"><path d="M8 3.1V7a4 4 0 0 0 8 0V3.1" /><path d="m9 15-1-1M15 15l1-1" /><path d="M9 19c-2.8 0-5-2.2-5-5v-4a8 8 0 0 1 16 0v4c0 2.8-2.2 5-5 5Z" /><path d="m8 19-2 3M16 19l2 3" /></symbol>
+      <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6A1.4 1.4 0 0 1 5.4 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z" /><path d="M16 9a5 5 0 0 1 0 6" /><path d="M19.36 18.36a9 9 0 0 0 0-12.73" /></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 3.5v17a.5.5 0 0 0 .76.43l13.6-8.5a.5.5 0 0 0 0-.86L6.76 3.07A.5.5 0 0 0 6 3.5Z" /></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></symbol>
+      <symbol id="i-nav" viewBox="0 0 24 24"><path d="M3 11 22 2l-9 19-2-8-8-2Z" /></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><rect width="14" height="14" x="5" y="5" rx="2" /></symbol>
+      <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l4 2" /></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
+      <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /><path d="M12 15V3" /></symbol>
+      <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98" /></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></symbol>
+      <symbol id="i-battery" viewBox="0 0 24 24"><path d="M15 7h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2M6 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h1" /><path d="m11 7-3 5h4l-3 5" /><path d="M22 11v2" /></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+      <symbol id="i-cap" viewBox="0 0 24 24"><path d="M21.42 10.92a1 1 0 0 0-.02-1.84L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.83l8.57 3.91a2 2 0 0 0 1.66 0z" /><path d="M22 10v6M6 12.5V16a6 3 0 0 0 12 0v-3.5" /></symbol>
+      <symbol id="i-plane" viewBox="0 0 24 24"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z" /></symbol>
+      <symbol id="i-city" viewBox="0 0 24 24"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" /><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2M10 6h4M10 10h4M10 14h4M10 18h4" /></symbol>
+      <symbol id="i-road" viewBox="0 0 24 24"><path d="M4 21 8 3M20 21 16 3M12 4v2M12 10v3M12 17v3" /></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /><path d="M9 10h.01M12 10h.01M15 10h.01" /></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></symbol>
+      <symbol id="i-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4" /><path d="M3.34 19a10 10 0 1 1 17.32 0" /></symbol>
+      <symbol id="i-satellite" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><path d="M22 12h-4M6 12H2M12 6V2M12 22v-4" /></symbol>
+      <symbol id="i-cpu" viewBox="0 0 24 24"><rect width="16" height="16" x="4" y="4" rx="2" /><rect width="6" height="6" x="9" y="9" rx="1" /><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2" /></symbol>
+      <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M12 20h.01M8.5 16.43a5 5 0 0 1 7 0M2 8.82a15 15 0 0 1 4.17-2.65M10.66 5c4.01-.36 8.14.9 11.34 3.76M16.85 11.25a10 10 0 0 1 2.22 1.68M5 13a10 10 0 0 1 5.24-2.76M2 2l20 20" /></symbol>
+      <symbol id="i-hospital" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="4" /><path d="M12 8v8M8 12h8" /></symbol>
+      <symbol id="i-worship" viewBox="0 0 24 24"><path d="M3 22h18" /><path d="M6 18v-7M10 18v-7M14 18v-7M18 18v-7" /><path d="M12 2 20 7H4Z" /></symbol>
+      <symbol id="i-food" viewBox="0 0 24 24"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" /><path d="M7 2v20" /><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" /></symbol>
+      <symbol id="i-shop" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" /><path d="M3 6h18" /><path d="M16 10a4 4 0 0 1-8 0" /></symbol>
+      <symbol id="i-fuel" viewBox="0 0 24 24"><path d="M3 22h12M4 9h10" /><path d="M14 22V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v18" /><path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 4 0V9.83a2 2 0 0 0-.59-1.42L18 5" /></symbol>
+      <symbol id="i-park" viewBox="0 0 24 24"><path d="M12 22v-6" /><path d="M7 16h10a4 4 0 0 0 1.2-7.8A6 6 0 0 0 5.8 8.2 4 4 0 0 0 7 16Z" /></symbol>
+      <symbol id="i-hotel" viewBox="0 0 24 24"><path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9" /></symbol>
+      <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.8L20 10.7l-6.1 1.9L12 18.5l-1.9-5.9L4 10.7l6.1-1.9Z" /></symbol>
+    </svg>
+
+    <div class="stage">
+      <div class="device" id="device">
+        <div class="app" id="app">
+          <div id="map" class="map" aria-label="Map. Tap to drop a destination pin."></div>
+          <div class="map-scrim" aria-hidden="true"></div>
+
+          <header class="topbar">
+            <button class="brand-pill" id="aboutBtn" type="button" aria-label="About Hibernate Express">
+              <svg class="brand-logo" viewBox="0 0 64 64" aria-hidden="true">
+                <defs>
+                  <linearGradient id="lgBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#13243b" /><stop offset="1" stop-color="#070f1c" /></linearGradient>
+                  <linearGradient id="lgFur" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5eead4" /><stop offset="1" stop-color="#14b8a6" /></linearGradient>
+                </defs>
+                <rect width="64" height="64" rx="16" fill="url(#lgBg)" />
+                <circle cx="19" cy="25" r="7.5" fill="url(#lgFur)" /><circle cx="45" cy="25" r="7.5" fill="url(#lgFur)" />
+                <circle cx="19" cy="25" r="3.6" fill="#0f766e" /><circle cx="45" cy="25" r="3.6" fill="#0f766e" />
+                <ellipse cx="32" cy="39" rx="18" ry="16.5" fill="url(#lgFur)" />
+                <path class="brand-eyes" d="M22.5 36.5q3 3 6 0M35.5 36.5q3 3 6 0" fill="none" stroke="#063b36" stroke-width="2.4" stroke-linecap="round" />
+                <ellipse cx="32" cy="45" rx="7.5" ry="5.8" fill="#ccfbf1" />
+                <ellipse cx="32" cy="42.6" rx="2.9" ry="2.1" fill="#063b36" />
+                <path class="brand-z1" d="M46 7h6l-6 6.5h6" fill="none" stroke="#fde68a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+                <path class="brand-z2" d="M54.5 15h4l-4 4.4h4" fill="none" stroke="#fde68a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span class="brand-text">Hibernate <span>Express</span></span>
+            </button>
+            <div class="top-actions">
+              <button id="installBtn" class="fab fab-sm fab-accent" type="button" aria-label="Install the app" hidden><svg class="i"><use href="#i-download" /></svg></button>
+              <button id="shareBtn" class="fab fab-sm" type="button" aria-label="Share Hibernate Express"><svg class="i"><use href="#i-share" /></svg></button>
+            </div>
+          </header>
+
+          <div class="search" id="search">
+            <svg class="i search-icon"><use href="#i-search" /></svg>
+            <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="Where are you going?" autocomplete="off" autocapitalize="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="searchList" aria-label="Search for your stop" />
+            <button id="searchClear" class="search-clear" type="button" aria-label="Clear search" hidden><svg class="i"><use href="#i-x" /></svg></button>
+            <div id="searchPanel" class="search-panel" hidden>
+              <p id="searchStatus" class="search-status" role="status"></p>
+              <ul id="searchList" class="search-list stagger" role="listbox" aria-label="Search results"></ul>
+            </div>
+          </div>
+
+          <div class="map-fabs" id="mapFabs">
+            <button id="styleBtn" class="fab" type="button" aria-label="Switch map style"><svg class="i"><use href="#i-layers" /></svg></button>
+            <button id="locateBtn" class="fab" type="button" aria-label="Show my location"><svg class="i"><use href="#i-locate" /></svg></button>
+            <button id="followBtn" class="fab fab-accent" type="button" aria-label="Re-center on the trip" hidden><svg class="i"><use href="#i-nav" /></svg></button>
+          </div>
+
+          <section class="sheet" id="sheet" aria-label="Trip planner">
+            <div class="sheet-handle" id="sheetHandle" role="button" tabindex="0" aria-label="Drag to resize"><span></span></div>
+            <div class="sheet-body" id="sheetBody">
+              <div class="pane" id="planPane">
+                <div id="destCard" class="dest-card"></div>
+
+                <div class="recents" id="recentsBox" hidden>
+                  <p class="mini-label"><svg class="i"><use href="#i-history" /></svg>Recent stops</p>
+                  <div class="recent-chips stagger" id="recentChips"></div>
+                </div>
+
+                <section class="block">
+                  <h2 class="block-title"><span class="step-dot">2</span>Wake me up…</h2>
+                  <div class="segmented" role="radiogroup" aria-label="Travelling by" id="modeGroup">
+                    <span class="seg-indicator" aria-hidden="true"></span>
+                    <button type="button" class="seg-btn" role="radio" data-value="road"><svg class="i"><use href="#i-bus" /></svg>Bus / car</button>
+                    <button type="button" class="seg-btn" role="radio" data-value="rail"><svg class="i"><use href="#i-train" /></svg>Train</button>
+                  </div>
+                  <p class="field-label" id="distLabel">…this far before my stop</p>
+                  <div class="chips" role="radiogroup" aria-labelledby="distLabel" id="distGroup">
+                    <button type="button" class="chip" role="radio" data-value="500">500 m</button>
+                    <button type="button" class="chip" role="radio" data-value="1000">1 km</button>
+                    <button type="button" class="chip" role="radio" data-value="2000">2 km</button>
+                    <button type="button" class="chip" role="radio" data-value="3000">3 km</button>
+                    <button type="button" class="chip" role="radio" data-value="5000">5 km</button>
+                    <button type="button" class="chip" role="radio" data-value="10000">10 km</button>
+                  </div>
+                  <p class="field-label" id="timeLabel">…or this long before I arrive</p>
+                  <div class="chips" role="radiogroup" aria-labelledby="timeLabel" id="timeGroup">
+                    <button type="button" class="chip" role="radio" data-value="0">Off</button>
+                    <button type="button" class="chip" role="radio" data-value="5">5 min</button>
+                    <button type="button" class="chip" role="radio" data-value="10">10 min</button>
+                    <button type="button" class="chip" role="radio" data-value="15">15 min</button>
+                    <button type="button" class="chip" role="radio" data-value="20">20 min</button>
+                    <button type="button" class="chip" role="radio" data-value="30">30 min</button>
+                  </div>
+                  <p class="hint">Whichever comes first. Time uses your bus's real pace.</p>
+                  <p class="notice" id="thresholdWarn" role="alert" hidden></p>
+                </section>
+
+                <section class="block">
+                  <h2 class="block-title"><span class="step-dot">3</span>Alarm</h2>
+                  <div class="sound-row">
+                    <div class="select-wrap">
+                      <select id="soundSelect" aria-label="Alarm sound"></select>
+                      <svg class="i"><use href="#i-chevron" /></svg>
+                    </div>
+                    <button id="testSoundBtn" class="btn btn-soft" type="button"><svg class="i"><use href="#i-volume" /></svg>Test</button>
+                  </div>
+                  <label class="toggle-row" for="vibrateToggle">
+                    <span><strong>Vibrate too</strong><small>Android phones</small></span>
+                    <input id="vibrateToggle" type="checkbox" class="toggle" />
+                  </label>
+                  <details class="manual" id="manualBox">
+                    <summary><svg class="i"><use href="#i-chevron" /></svg>Enter coordinates or a Maps link</summary>
+                    <form id="manualForm" class="manual-form" novalidate>
+                      <div class="manual-row">
+                        <input id="manualInput" type="text" placeholder="17.9833, 79.5308" autocomplete="off" spellcheck="false" aria-label="Coordinates or a Google Maps link" />
+                        <button type="submit" class="btn btn-soft">Set pin</button>
+                      </div>
+                      <p class="field-error" id="manualError" role="alert" hidden></p>
+                    </form>
+                  </details>
+                </section>
+                <p class="sheet-foot">Map-matched on the real road · Java engine · no sign-up</p>
+              </div>
+
+              <div class="pane" id="ridePane" hidden>
+                <div class="ride-head">
+                  <div class="ride-dest">
+                    <p class="eyebrow" id="rideEyebrow">Heading to</p>
+                    <h2 id="rideDestName">—</h2>
+                  </div>
+                  <span class="live-pill" id="livePill" data-state="locating"><span class="live-dot"></span><span id="livePillText">GPS</span></span>
+                </div>
+
+                <div class="countdown">
+                  <div>
+                    <p class="big"><span id="remainValue">—</span><span id="remainUnit" class="unit"></span></p>
+                    <p class="big-label" id="remainLabel">getting your location…</p>
+                  </div>
+                  <div class="eta">
+                    <p class="eta-value" id="etaValue">—</p>
+                    <p class="eta-label" id="etaLabel">estimated arrival</p>
+                  </div>
+                </div>
+
+                <div class="track" id="track" role="progressbar" aria-label="Trip progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                  <div class="track-rail"><div class="track-fill" id="trackFill"></div></div>
+                  <div class="track-bus" id="trackBus"><svg class="i"><use href="#i-bus" /></svg></div>
+                  <div class="track-bell" id="trackBell" title="The alarm rings here"><svg class="i"><use href="#i-bell" /></svg></div>
+                  <div class="track-flag" title="Your stop"><svg class="i"><use href="#i-pin" /></svg></div>
+                </div>
+                <div class="track-meta"><span id="progressText">0% of the way</span><span id="alarmRule"></span></div>
+
+                <div class="stats">
+                  <div class="stat"><svg class="i"><use href="#i-gauge" /></svg><span class="stat-value" id="statSpeed">—</span><span class="stat-label">speed</span></div>
+                  <div class="stat"><svg class="i"><use href="#i-satellite" /></svg><span class="stat-value" id="statGps">—</span><span class="stat-label">GPS</span></div>
+                  <div class="stat"><svg class="i"><use href="#i-clock" /></svg><span class="stat-value" id="statUpdated">—</span><span class="stat-label">updated</span></div>
+                </div>
+
+                <p class="ride-status" id="rideStatus" data-tone="info">Getting your location…</p>
+
+                <div class="ride-actions">
+                  <button id="nightBtn" class="btn btn-soft" type="button"><svg class="i"><use href="#i-moon" /></svg>Night mode</button>
+                  <button id="endBtn" class="btn btn-danger" type="button"><svg class="i"><use href="#i-stop" /></svg>End trip</button>
+                </div>
+                <ul class="ride-tips">
+                  <li><svg class="i"><use href="#i-volume" /></svg>Media volume up</li>
+                  <li><svg class="i"><use href="#i-battery" /></svg>Charger on long rides</li>
+                  <li><svg class="i"><use href="#i-moon" /></svg>Night mode saves battery</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          <div class="cta" id="planCta">
+            <button id="startBtn" class="btn btn-primary btn-xl shine" type="button" disabled>
+              <span class="btn-spinner" aria-hidden="true"></span><svg class="i"><use href="#i-bell-ring" /></svg><span id="startLabel">Pick your stop to start</span>
+            </button>
+            <button id="demoBtn" class="btn btn-ghost" type="button"><svg class="i"><use href="#i-play" /></svg><span id="demoLabel">Try a 40-second demo ride</span></button>
+          </div>
+
+          <!-- First-run intro -->
+          <section class="intro" id="intro" hidden aria-label="Welcome">
+            <div class="intro-sky" aria-hidden="true"><span></span><span></span><span></span></div>
+            <figure class="intro-art" id="introArt">
+              <svg viewBox="0 0 640 300" role="img" aria-label="A sleepy bear naps on a night bus while a pin ahead rings an alarm before the stop" id="sceneSvg">
+                <defs>
+                  <linearGradient id="hxBus" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2dd4bf" /><stop offset="1" stop-color="#0f766e" /></linearGradient>
+                  <linearGradient id="hxBeam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fde68a" stop-opacity=".45" /><stop offset="1" stop-color="#fde68a" stop-opacity="0" /></linearGradient>
+                  <radialGradient id="hxGlow"><stop offset="0" stop-color="#2dd4bf" stop-opacity=".55" /><stop offset="1" stop-color="#2dd4bf" stop-opacity="0" /></radialGradient>
+                  <mask id="hxMoon"><rect width="640" height="300" fill="#fff" /><circle cx="574" cy="48" r="25" fill="#000" /></mask>
+                </defs>
+                <g class="hx-stars" fill="#cbd5e1">
+                  <circle cx="38" cy="34" r="1.5" /><circle cx="110" cy="62" r="1.1" /><circle cx="176" cy="22" r="1.6" /><circle cx="248" cy="58" r="1.1" />
+                  <circle cx="318" cy="28" r="1.4" /><circle cx="392" cy="70" r="1.2" /><circle cx="452" cy="30" r="1.6" /><circle cx="506" cy="96" r="1.1" />
+                  <circle cx="612" cy="118" r="1.3" /><circle cx="72" cy="104" r="1.2" /><circle cx="226" cy="98" r="1" /><circle cx="356" cy="104" r="1.1" />
+                </g>
+                <circle class="hx-moon" cx="560" cy="60" r="28" fill="#fde68a" mask="url(#hxMoon)" />
+                <g fill="#0e1a2c">
+                  <rect x="0" y="152" width="44" height="80" /><rect x="48" y="126" width="34" height="106" /><rect x="86" y="160" width="40" height="72" />
+                  <rect x="130" y="138" width="28" height="94" /><rect x="162" y="170" width="46" height="62" /><rect x="212" y="120" width="30" height="112" />
+                  <rect x="246" y="156" width="52" height="76" /><rect x="302" y="134" width="26" height="98" /><rect x="332" y="166" width="44" height="66" />
+                  <rect x="380" y="144" width="36" height="88" /><rect x="420" y="172" width="50" height="60" /><rect x="474" y="130" width="30" height="102" />
+                  <rect x="508" y="160" width="58" height="72" /><rect x="570" y="140" width="32" height="92" /><rect x="606" y="168" width="34" height="64" />
+                </g>
+                <g class="hx-windows" fill="#fde68a">
+                  <rect x="56" y="136" width="5" height="6" /><rect x="68" y="150" width="5" height="6" /><rect x="138" y="150" width="5" height="6" />
+                  <rect x="220" y="132" width="5" height="6" /><rect x="228" y="160" width="5" height="6" /><rect x="310" y="146" width="5" height="6" />
+                  <rect x="388" y="156" width="5" height="6" /><rect x="482" y="142" width="5" height="6" /><rect x="490" y="170" width="5" height="6" /><rect x="578" y="152" width="5" height="6" />
+                </g>
+                <rect x="0" y="230" width="640" height="70" fill="#0a1424" />
+                <line x1="0" y1="231" x2="640" y2="231" stroke="#1f3049" stroke-width="2" />
+                <line class="hx-road-dash" x1="-60" y1="270" x2="700" y2="270" stroke="#2c3d57" stroke-width="5" stroke-dasharray="26 22" stroke-linecap="round" />
+                <path class="hx-route" d="M364 214 H 532" stroke="#2dd4bf" stroke-width="4" stroke-dasharray="1 11" stroke-linecap="round" fill="none" />
+                <circle class="hx-pulse" cx="556" cy="212" r="44" fill="url(#hxGlow)" />
+                <g transform="translate(538 168)">
+                  <g class="hx-pin-bob">
+                    <path d="M18 1C8.6 1 1 8.4 1 17.6 1 30.4 18 47 18 47s17-16.6 17-29.4C35 8.4 27.4 1 18 1z" fill="#2dd4bf" stroke="#042f2e" stroke-width="2" />
+                    <circle cx="18" cy="17.5" r="6.5" fill="#042f2e" />
+                  </g>
+                </g>
+                <g transform="translate(536 112)">
+                  <g class="hx-bell">
+                    <path d="M15.4 33.6a3.2 3.2 0 0 0 5.5 0" fill="none" stroke="#fbbf24" stroke-width="3" stroke-linecap="round" />
+                    <path d="M5.2 24.5A1.6 1.6 0 0 0 6.4 27.2h25.6a1.6 1.6 0 0 0 1.2-2.7C31.1 22.3 28.8 20 28.8 12.8a9.6 9.6 0 0 0-19.2 0c0 7.2-2.3 9.5-4.4 11.7Z" fill="#fbbf24" fill-opacity=".9" />
+                    <path d="M36 12c0-3.7-1.3-6.9-3.2-9.6M1.6 12c0-3.7 1.3-6.9 3.2-9.6" fill="none" stroke="#fbbf24" stroke-width="2.6" stroke-linecap="round" />
+                  </g>
+                </g>
+                <g transform="translate(400 132)">
+                  <g class="hx-callout-wrap">
+                    <rect width="124" height="34" rx="17" fill="#0e1a2c" stroke="#2dd4bf" stroke-opacity=".55" />
+                    <text x="62" y="23" text-anchor="middle" class="hx-callout">2.0 KM · WAKE UP!</text>
+                  </g>
+                </g>
+                <g class="hx-drive">
+                  <g class="hx-bus">
+                    <polygon class="hx-beam" points="352,198 476,176 476,228 352,216" fill="url(#hxBeam)" />
+                    <rect x="96" y="148" width="258" height="78" rx="18" fill="url(#hxBus)" />
+                    <rect x="104" y="150" width="242" height="8" rx="4" fill="#99f6e4" opacity=".45" />
+                    <rect x="112" y="164" width="38" height="30" rx="6" fill="#fde68a" opacity=".9" />
+                    <rect x="158" y="164" width="38" height="30" rx="6" fill="#fde68a" opacity=".95" />
+                    <rect x="204" y="164" width="38" height="30" rx="6" fill="#fde68a" opacity=".85" />
+                    <rect x="250" y="164" width="38" height="30" rx="6" fill="#fde68a" opacity=".9" />
+                    <path d="M298 164h36a10 10 0 0 1 10 10v20h-46z" fill="#ccfbf1" opacity=".9" />
+                    <rect x="96" y="204" width="258" height="6" fill="#042f2e" opacity=".35" />
+                    <circle cx="349" cy="206" r="5" fill="#fef9c3" />
+                    <g class="hx-wheel"><circle cx="150" cy="228" r="17" fill="#0b1220" stroke="#475569" stroke-width="4" /><path d="M150 214v28M136 228h28" stroke="#64748b" stroke-width="3" /><circle cx="150" cy="228" r="5" fill="#94a3b8" /></g>
+                    <g class="hx-wheel hx-wheel-2"><circle cx="302" cy="228" r="17" fill="#0b1220" stroke="#475569" stroke-width="4" /><path d="M302 214v28M288 228h28" stroke="#64748b" stroke-width="3" /><circle cx="302" cy="228" r="5" fill="#94a3b8" /></g>
+                    <g class="hx-bear">
+                      <circle cx="170" cy="180" r="4" fill="#2dd4bf" /><circle cx="184" cy="180" r="4" fill="#2dd4bf" />
+                      <circle cx="170" cy="180" r="1.8" fill="#0f766e" /><circle cx="184" cy="180" r="1.8" fill="#0f766e" />
+                      <ellipse cx="177" cy="188" rx="10" ry="9" fill="#2dd4bf" />
+                      <path d="M171.5 186.5q1.8 1.8 3.6 0M178.9 186.5q1.8 1.8 3.6 0" fill="none" stroke="#063b36" stroke-width="1.4" stroke-linecap="round" />
+                      <ellipse cx="177" cy="191.6" rx="3.6" ry="2.8" fill="#ccfbf1" />
+                      <path d="M164 194q13 6 26 0" fill="none" stroke="#0f766e" stroke-width="4" stroke-linecap="round" />
+                    </g>
+                  </g>
+                  <text class="hx-z" x="196" y="150">z</text>
+                  <text class="hx-z" x="204" y="138">z</text>
+                  <text class="hx-z" x="214" y="124">Z</text>
+                </g>
+              </svg>
+            </figure>
+            <div class="intro-copy">
+              <p class="eyebrow intro-in" style="--d: 0.2s">Never miss your stop</p>
+              <h1 class="intro-title">
+                <span class="word" style="--d: 0.35s">Sleep</span> <span class="word" style="--d: 0.45s">on</span> <span class="word" style="--d: 0.55s">the</span> <span class="word" style="--d: 0.65s">bus.</span>
+                <span class="accent"><span class="word" style="--d: 0.85s">We'll</span> <span class="word" style="--d: 0.95s">wake</span> <span class="word" style="--d: 1.05s">you</span> <span class="word" style="--d: 1.15s">up.</span></span>
+              </h1>
+              <p class="intro-tagline" id="introTagline" aria-label="Even Kumbhakaran won’t miss his stop now"></p>
+              <ul class="intro-points">
+                <li class="intro-in" style="--d: 1.6s"><svg class="i"><use href="#i-pin" /></svg>Pin your stop on the map</li>
+                <li class="intro-in" style="--d: 1.75s"><svg class="i"><use href="#i-route" /></svg>Live GPS on the real road route</li>
+                <li class="intro-in" style="--d: 1.9s"><svg class="i"><use href="#i-bell-ring" /></svg>Loud alarm before you arrive</li>
+              </ul>
+              <button id="introGo" class="btn btn-primary btn-xl shine intro-in" style="--d: 2.1s" type="button">Let's go <span class="arrow" aria-hidden="true">→</span></button>
+              <p class="intro-foot intro-in" style="--d: 2.3s">Free · no sign-up · works best on your phone</p>
+            </div>
+          </section>
+
+          <!-- About -->
+          <section class="about" id="about" hidden aria-label="About Hibernate Express">
+            <header class="about-bar">
+              <button class="fab fab-sm" id="aboutBack" type="button" aria-label="Back"><svg class="i"><use href="#i-back" /></svg></button>
+              <h2>About</h2>
+            </header>
+            <div class="about-body" id="aboutBody">
+              <figure class="about-art reveal" id="aboutArt"></figure>
+              <p class="about-tag reveal">“Even Kumbhakaran won’t miss his stop now” 😴</p>
+              <ul class="features">
+                <li class="reveal"><span class="feature-icon"><svg class="i"><use href="#i-pin" /></svg></span><strong>Pin your stop</strong><span>Search, tap the map or paste a Maps link</span></li>
+                <li class="reveal"><span class="feature-icon"><svg class="i"><use href="#i-bell-ring" /></svg></span><strong>Smart alarm</strong><span>By distance or minutes, whichever first</span></li>
+                <li class="reveal"><span class="feature-icon"><svg class="i"><use href="#i-route" /></svg></span><strong>Real road distance</strong><span>GPS matched onto the actual route</span></li>
+                <li class="reveal"><span class="feature-icon"><svg class="i"><use href="#i-shield" /></svg></span><strong>Free &amp; private</strong><span>No account, nothing stored about you</span></li>
+              </ul>
+              <article class="about-card reveal">
+                <h3>How it works</h3>
+                <ol class="how">
+                  <li><span>1</span><div><strong>Set your stop</strong><p>Search a place, tap the map, or paste a Google Maps link.</p></div></li>
+                  <li><span>2</span><div><strong>Start the trip</strong><p>The Java server fetches the real road route and follows your bus along it, live.</p></div></li>
+                  <li><span>3</span><div><strong>Sleep</strong><p>A loud alarm, vibration and a notification wake you before you get there.</p></div></li>
+                </ol>
+              </article>
+              <article class="about-card reveal">
+                <h3>Why it's accurate</h3>
+                <ul class="why">
+                  <li><svg class="i"><use href="#i-road" /></svg><div><strong>Road distance, not a straight line.</strong> GPS fixes are map-matched onto the route — safely through U-turns and roads you use twice.</div></li>
+                  <li><svg class="i"><use href="#i-gauge" /></svg><div><strong>ETA from your bus's real pace,</strong> including signals and stops, reacting within ~2 minutes when it speeds up.</div></li>
+                  <li><svg class="i"><use href="#i-route" /></svg><div><strong>Re-routes</strong> automatically if the driver takes another road.</div></li>
+                  <li><svg class="i"><use href="#i-wifi-off" /></svg><div><strong>Dead-zone safety net:</strong> no GPS or no internet? It keeps counting down and leans early, never late.</div></li>
+                  <li><svg class="i"><use href="#i-cpu" /></svg><div><strong>Java engine, tested on 600+ simulated rides</strong> on the real Hyderabad → Warangal road: with normal GPS it rings within a few dozen metres of your point.</div></li>
+                </ul>
+              </article>
+              <article class="about-card faq reveal">
+                <h3>Questions</h3>
+                <details><summary>Does it work with the screen off?<svg class="i"><use href="#i-chevron" /></svg></summary><p>Phones pause websites when locked, so during a trip the app keeps your screen awake. Night mode turns it almost black to save battery.</p></details>
+                <details><summary>Does it need internet?<svg class="i"><use href="#i-chevron" /></svg></summary><p>Yes to start a trip and to follow it on the server. In dead zones your phone keeps its own estimate and can still ring.</p></details>
+                <details><summary>Is my location shared?<svg class="i"><use href="#i-chevron" /></svg></summary><p>Only with the Hibernate Express server for the length of your trip, to follow it on the road route. No account, and trips are deleted when they end.</p></details>
+                <details><summary>Can I use it on trains?<svg class="i"><use href="#i-chevron" /></svg></summary><p>Yes — choose Train. It uses the straight-line distance to your station, so the alarm rings a little early.</p></details>
+                <details><summary>iPhone tips<svg class="i"><use href="#i-chevron" /></svg></summary><p>Share → Add to Home Screen for notifications. The alarm plays even with the silent switch on; keep the media volume up.</p></details>
+              </article>
+              <article class="share-card reveal">
+                <span class="share-icon"><svg class="i"><use href="#i-chat" /></svg></span>
+                <div><strong>Help your friends not miss their stops!</strong><p>Share it with someone who travels 👉</p></div>
+                <div class="share-actions">
+                  <a id="whatsappLink" class="btn btn-whatsapp" href="https://wa.me/" target="_blank" rel="noopener">WhatsApp</a>
+                  <button id="copyLinkBtn" class="btn btn-soft" type="button"><svg class="i"><use href="#i-link" /></svg>Copy link</button>
+                </div>
+              </article>
+              <p class="credits reveal">Map data &amp; tiles © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors · routing OSRM · search Photon &amp; Nominatim · Java backend + TypeScript app · Made in India 🇮🇳</p>
+            </div>
+          </section>
+
+          <div class="launch" id="launch" hidden aria-hidden="true">
+            <span class="launch-bus"><svg class="i"><use href="#i-bus" /></svg></span>
+            <p class="launch-text">Alarm set · sleep well</p>
+          </div>
+
+          <div id="alarmOverlay" class="overlay alarm-overlay" role="alertdialog" aria-modal="true" aria-labelledby="alarmTitle" aria-describedby="alarmText" hidden>
+            <div class="alarm-rings" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div class="alarm-content">
+              <div class="alarm-bell"><svg class="i"><use href="#i-bell-ring" /></svg></div>
+              <p class="eyebrow" id="alarmEyebrow">Wake up!</p>
+              <h2 id="alarmTitle">Your stop is coming up</h2>
+              <p id="alarmText" class="alarm-text"></p>
+              <p class="alarm-joke" id="alarmJoke"></p>
+              <button id="awakeBtn" class="btn btn-primary btn-xl" type="button">I'm awake</button>
+              <button id="snoozeBtn" class="btn btn-ghost" type="button">Snooze 2 min</button>
+            </div>
+          </div>
+
+          <div id="nightOverlay" class="overlay night-overlay" hidden>
+            <button class="night-inner" id="nightExit" type="button" aria-label="Exit night mode">
+              <span class="night-value" id="nightValue">—</span>
+              <span class="night-label" id="nightLabel">to your stop</span>
+              <span class="night-eta" id="nightEta"></span>
+              <span class="night-hint">Tap to exit · the alarm stays on</span>
+            </button>
+          </div>
+
+          <dialog id="endDialog" class="dialog">
+            <form method="dialog">
+              <h3>End this trip?</h3>
+              <p>The alarm will be switched off.</p>
+              <div class="dialog-actions">
+                <button value="cancel" class="btn btn-soft">Keep going</button>
+                <button value="end" class="btn btn-danger">End trip</button>
+              </div>
+            </form>
+          </dialog>
+
+          <div id="resumeBar" class="resume-bar" role="region" aria-label="Resume your trip" hidden>
+            <p>You were on your way to <strong id="resumeName"></strong>.</p>
+            <div class="resume-actions">
+              <button id="resumeBtn" class="btn btn-primary" type="button">Resume</button>
+              <button id="discardBtn" class="btn btn-ghost" type="button">Discard</button>
+            </div>
+          </div>
+
+          <div id="toast" class="toast" role="status" aria-live="polite" hidden><span id="toastText"></span><span class="toast-timer"></span></div>
+          <canvas id="confetti" class="confetti" hidden aria-hidden="true"></canvas>
+        </div>
+      </div>
+      <aside class="desk-note">
+        <p class="eyebrow">Made for your phone</p>
+        <h2>Open Hibernate Express on your phone's browser</h2>
+        <p>It follows your bus with the phone's GPS and keeps the screen awake while you nap. This window shows the phone version.</p>
+      </aside>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
