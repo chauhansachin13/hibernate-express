@@ -53,9 +53,21 @@ and synthetic edge cases, through the same `TripEngine` the server runs for real
 | 10-minute alarm, steady 60 km/h | 30/30 | 0 … +11 s | −1 s |
 | 10-minute alarm, bus speeds up near the end | 30/30 | −4 … +12 s | −4 s |
 
-**2. A live trip end to end.** Phone app → Java server → OSRM, with simulated GPS driving a real
-4.4 km road in Hanamkonda one fix per second: a **2 km** alarm rang with **1,993 m** of road left
-(0.3 s after the point at 90 km/h), and a **5-minute** alarm rang **4 min 59 s** before arrival.
+**2. Live trips end to end.** Seven trips at once against the real Java server, on real OSRM roads
+in Hanamkonda and Warangal (4.4 km and 13 km), with simulated GPS sent in real time exactly as the
+phone sends it. “Rang at” is the bus's true road distance or time left at that moment:
+
+| Live trip | Alarm | Rang at | Result |
+|---|---:|---:|---|
+| Highway 60 km/h, a fix every second, ±10 m GPS | 2 km | 1,993 m | 0.4 s after the point |
+| City 30 km/h with 20 s stops, a fix every 2 s | 1 km | 983 m | within one GPS fix |
+| 40 km/h, a fix every 5 s (battery saving) | 500 m | 500 m | on the point |
+| 80 km/h, a fix every 10 s (sparse GPS) | 2 km | 1,989 m | 0.5 s after the point |
+| 60 km/h, GPS lost for 70 s just before the point | 2 km | 2,017 m | 17 m early |
+| 50 km/h | 5 min | 5:00 | on time |
+| City 25 km/h with 15 s stops | 5 min | 5:08 | 8 s early |
+
+Every arrival alarm rang 120–195 m before the stop.
 
 **3. When the server can't be reached.** The phone keeps the alarm working on its own
 (`frontend/src/trip-client.ts`), and the tests in `frontend/tests/trip-client.test.ts` prove it with a
@@ -95,7 +107,9 @@ flowchart LR
   around the last position, scored by distance, by how far it strays from the progress predicted from
   ground speed, and by travel direction — so U-turns and out-and-back roads never jump to the wrong pass.
 - **Pace & ETA** (`trip/PaceEstimator.java`): speed over the remaining distance in an 8-minute window
-  and a 2-minute short window, blended with the router's estimate until enough history exists.
+  and a 2-minute short window. The displayed ETA blends in the router's estimate until enough history
+  exists; the time alarm never does — the router assumes a car, so a slow city bus would be woken at
+  the start. It waits for about 20 s of measured driving and then takes the faster window (errs early).
 - **Alarm policy** (`trip/AlarmPolicy.java`): distance or time, whichever first; snooze; arrival needs
   both the pin to be near *and* little road left.
 - **Between fixes** (`trip/TripEngine.java`): the remaining distance keeps counting down at the measured
@@ -113,7 +127,7 @@ backend/                     Java 21+, Maven, no runtime dependencies (JDK HttpS
     parse/                   coordinates and map links, plus codes
     sim/                     ride simulator and the accuracy simulation
     geo/, json/              geo maths, a tiny JSON reader/writer
-  src/test/java/             JUnit 5 tests (119)
+  src/test/java/             JUnit 5 tests (120)
 frontend/                    phone web app: TypeScript, Vite, Leaflet — no framework
   src/api.ts                 client for the Java API
   src/trip-client.ts         runs a trip against the server, with the offline safety net
@@ -130,7 +144,7 @@ You need a JDK 21+ with Maven, and Node 20.19+.
 
 ```bash
 cd backend
-mvn package                                        # build + 119 tests → target/hibernate-express.jar
+mvn package                                        # build + 120 tests → target/hibernate-express.jar
 java -jar target/hibernate-express.jar serve       # API on http://localhost:8080
 ```
 

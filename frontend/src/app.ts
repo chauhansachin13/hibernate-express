@@ -701,7 +701,7 @@ export class App {
       if (length <= this.settings.distanceM) {
         warning = `Your stop is only ${formatDistance(length)} away by road, so the alarm would ring straight away. Pick a smaller distance.`;
       } else if (this.settings.timeMin > 0 && busSec !== null && busSec <= this.settings.timeMin * 60) {
-        warning = `Your stop is only about ${formatDuration(busSec)} away, so the time alarm would ring straight away. Pick a shorter time or switch it off.`;
+        warning = `Your stop is only about ${formatDuration(busSec)} away, so the time alarm may ring soon after you set off. Pick a shorter time or switch it off.`;
       }
     } else if (dest && this.settings.mode === 'rail' && this.userFix) {
       const d = haversine(this.userFix, dest);

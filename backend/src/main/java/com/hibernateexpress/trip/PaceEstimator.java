@@ -101,6 +101,20 @@ public final class PaceEstimator {
     return recent != null ? Math.max(smooth, recent.speed()) : smooth;
   }
 
+  /**
+   * Speed for the "N minutes before arrival" rule: measured only. The routing engine's estimate
+   * is a car's free-flow speed — far too fast for a city bus with stops — so on its own it would
+   * ring the time alarm at the start of a trip. Until about 20 s of driving has been measured the
+   * rule waits (NaN); after that it takes the faster of the long and short windows, so it still
+   * errs early when the bus speeds up.
+   */
+  public double timeRuleSpeed() {
+    Observation longer = observed();
+    if (longer == null) return Double.NaN;
+    Observation recent = observed(SHORT_WINDOW_MS);
+    return recent != null ? Math.max(longer.speed(), recent.speed()) : longer.speed();
+  }
+
   /** Seconds to cover the remaining metres, or NaN while stopped. */
   public double eta(double remaining, double speed) {
     if (speed < STOPPED_BELOW_MPS) return Double.NaN;

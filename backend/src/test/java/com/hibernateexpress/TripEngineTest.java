@@ -53,6 +53,27 @@ class TripEngineTest {
   }
 
   @Test
+  void timeAlarmGoesByTheBussRealPaceNotTheCarEstimate() {
+    long[] clock = {0};
+    TripEngine engine =
+        new TripEngine(LINE.end(), AlarmSettings.of(500, 5), (a, b) -> CompletableFuture.completedFuture(ROUTE), () -> clock[0], EngineOptions.defaults(), ROUTE);
+    // 3.5 km out the routing estimate says about 4.6 minutes — under the 5-minute rule — but this
+    // is a slow city bus at 18 km/h, really 11.7 minutes away.
+    double start = LINE.length() - 3500;
+    Double rangAt = null;
+    for (int t = 0; t <= 800 && rangAt == null; t += 2) {
+      clock[0] = t * 1000L;
+      double along = start + 5.0 * t;
+      engine.handleFix(Fix.at(LINE.pointAt(along), 8, 5.0, clock[0]), clock[0]);
+      TripSnapshot s = engine.snapshot(clock[0]);
+      if (s.ringing() == AlarmReason.TIME) rangAt = LINE.length() - along;
+      else assertNull(s.ringing(), "nothing else should ring before the 5-minute point");
+    }
+    // 5 minutes at 5 m/s is 1500 m: it rings there, not at the start.
+    assertTrue(rangAt != null && rangAt >= 1480 && rangAt <= 1540, "rang with " + rangAt + " m left");
+  }
+
+  @Test
   void prefetchedRouteIsReadyForTheFirstFix() {
     long[] clock = {0};
     AtomicInteger calls = new AtomicInteger();

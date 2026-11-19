@@ -257,7 +257,8 @@ public final class TripEngine {
   private void evaluate(long now) {
     Estimate est = estimate(now);
     if (est == null) return;
-    double etaSec = pace.eta(est.remaining(), pace.alarmSpeed());
+    // The time rule goes by the bus's measured pace, never the routing engine's car-speed guess.
+    double etaSec = pace.eta(est.remaining(), pace.timeRuleSpeed());
     double direct =
         lastFix != null && !est.gpsLost()
             ? Geo.haversine(lastFix.position(), destination)
