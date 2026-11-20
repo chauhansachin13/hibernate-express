@@ -44,6 +44,8 @@ public final class TripEngine {
   private double initialRemaining = Double.NaN;
   private boolean onRoute = true;
   private long offRouteSince = -1;
+  /** Straight-line radius around the stop matching the alarm point on this route (NaN = off). */
+  private double safetyCircle = Double.NaN;
 
   private boolean routing;
   private CompletableFuture<Void> pending = CompletableFuture.completedFuture(null);
@@ -263,7 +265,7 @@ public final class TripEngine {
         lastFix != null && !est.gpsLost()
             ? Geo.haversine(lastFix.position(), destination)
             : Double.POSITIVE_INFINITY;
-    policy.evaluate(new AlarmPolicy.Input(now, est.remaining(), etaSec, est.gpsLost(), direct));
+    policy.evaluate(new AlarmPolicy.Input(now, est.remaining(), etaSec, est.gpsLost(), direct, currentCircle(now)));
   }
 
   private void maybeReroute(Fix fix, long now) {
@@ -325,6 +327,7 @@ public final class TripEngine {
     tracker = new RouteTracker(line);
     onRoute = true;
     offRouteSince = -1;
+    safetyCircle = safetyCircle(data, line);
     routeVersion++;
     if (pace == null) {
       pace = new PaceEstimator(priorSpeed(data));
@@ -336,6 +339,46 @@ public final class TripEngine {
               : Geo.haversine(lastFix.position(), destination);
       pace.rebase(fresh - previousRemaining);
     }
+  }
+
+  /** Off-route this long before the full-size safety circle takes over. */
+  private static final long OFF_ROUTE_CIRCLE_AFTER_MS = 10_000;
+  /** The last stretch before the alarm point may approach the circle; earlier road must not. */
+  private static final double CIRCLE_APPROACH_M = 300;
+  /** Earlier road must stay this far outside the circle, so GPS noise there can't trigger it. */
+  private static final double CIRCLE_NOISE_MARGIN_M = 60;
+
+  /**
+   * The safety circle for a route: the straight-line distance from the stop to the alarm point (the
+   * spot where the road distance left equals the alarm distance). A bus following the route enters
+   * this circle exactly at the alarm point, so it is an independent check that needs no map
+   * matching. It is switched off when the route passes this close to the stop earlier — a U-turn
+   * or a loop past the stop — where it would ring too soon.
+   */
+  private double safetyCircle(RouteData data, RouteLine line) {
+    double alarmAlong = line.length() - settings.distanceM();
+    if (data.kind() != RouteData.Kind.ROAD || alarmAlong <= 0) return Double.NaN;
+    double radius = Geo.haversine(line.pointAt(alarmAlong), destination);
+    double earlierUntil = alarmAlong - CIRCLE_APPROACH_M;
+    for (int i = 0; i + 1 < line.size() && line.cumulative(i) < earlierUntil; i++) {
+      // A long straight segment running past the cut-off is checked up to the cut-off only.
+      LatLng end = line.cumulative(i + 1) <= earlierUntil ? line.point(i + 1) : line.pointAt(earlierUntil);
+      if (Geo.projectOnSegment(destination, line.point(i), end).distance() <= radius + CIRCLE_NOISE_MARGIN_M) {
+        return Double.NaN;
+      }
+    }
+    return radius;
+  }
+
+  /**
+   * The circle for this moment. Off the planned road for a while (a wrong turn, a shortcut, a
+   * failed re-route) the road estimate can't be trusted, so the circle becomes the full alarm
+   * distance: the straight line is never longer than the real road, so it can only ring early.
+   */
+  private double currentCircle(long now) {
+    if (routeData == null || routeData.kind() != RouteData.Kind.ROAD) return Double.NaN;
+    if (!onRoute && offRouteSince >= 0 && now - offRouteSince >= OFF_ROUTE_CIRCLE_AFTER_MS) return settings.distanceM();
+    return safetyCircle;
   }
 
   private double priorSpeed(RouteData data) {

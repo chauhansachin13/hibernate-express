@@ -16,6 +16,11 @@ export interface GuardInput {
   /** Time rule in seconds, or null when off. */
   timeSec: number | null;
   arrivalRadiusM: number;
+  /**
+   * Safety circle: being within this straight-line distance of the stop also counts as reaching
+   * the alarm distance — a second check that needs no route matching (null = off).
+   */
+  circleM?: number | null;
 }
 
 export interface GuardResult {
@@ -35,7 +40,8 @@ export function offlineEstimate(i: GuardInput): GuardResult {
   const pace = i.paceMps !== null && i.paceMps > 0.5 ? i.paceMps : null;
   const remaining = Math.max(0, pace !== null ? i.remaining - pace * EARLY_FACTOR * (i.ageMs / 1000) : i.remaining);
   const etaSec = pace !== null ? remaining / pace : null;
-  const byDistance = remaining <= i.distanceM;
+  const byCircle = i.directNow !== null && i.circleM != null && i.directNow <= i.circleM;
+  const byDistance = remaining <= i.distanceM || byCircle;
   const byTime = i.timeSec !== null && etaSec !== null && etaSec <= i.timeSec;
   const arrived = i.directNow !== null && i.directNow <= i.arrivalRadiusM;
   return { remaining, etaSec, approach: byDistance || byTime, rule: byDistance ? 'distance' : byTime ? 'time' : null, arrived };

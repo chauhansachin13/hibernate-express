@@ -48,6 +48,26 @@ export class RoutePath {
   }
 
   /**
+   * The safety circle, the same rule the server uses: the straight-line distance from the stop to
+   * the point where the road left equals {@code distanceM}. A bus on this route enters the circle
+   * exactly at the alarm point. Null when the route passes that close to the stop earlier (a
+   * U-turn or a loop past the stop), where a circle would ring too soon.
+   */
+  safetyCircle(stop: LatLng, distanceM: number): number | null {
+    const alarmAlong = this.length - distanceM;
+    if (alarmAlong <= 0) return null;
+    const radius = haversine(this.pointAt(alarmAlong), stop);
+    // The last 300 m before the alarm point may approach the circle; earlier road must stay 60 m clear.
+    const earlierUntil = alarmAlong - 300;
+    for (let i = 0; i + 1 < this.points.length && this.cumulative[i] < earlierUntil; i++) {
+      // A long straight segment running past the cut-off is checked up to the cut-off only.
+      const end = this.cumulative[i + 1] <= earlierUntil ? this.points[i + 1] : this.pointAt(earlierUntil);
+      if (projectOnSegment(stop, this.points[i], end).distance <= radius + 60) return null;
+    }
+    return radius;
+  }
+
+  /**
    * Where on the route a GPS fix is, searching only between two along-distances (so a road
    * used twice, out and back, can't snap to the wrong pass). Null when nothing is in range.
    */

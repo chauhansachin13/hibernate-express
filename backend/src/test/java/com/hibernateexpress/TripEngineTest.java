@@ -74,6 +74,70 @@ class TripEngineTest {
   }
 
   @Test
+  void safetyCircleRingsOnTimeWhenTheBusLeavesThePlannedRoad() {
+    // Planned: 6 km east, then 6 km north to the stop. The bus drives the diagonal straight at the
+    // stop instead, and re-routing never answers, so the road estimate is no use.
+    RouteLine planned = new RouteLine(AccuracySimulation.walk(W, new double[][] {{90, 6000}, {0, 6000}}, 100));
+    RouteData route = new RouteData(planned.points(), planned.length(), planned.length() / 15, RouteData.Kind.ROAD, "test");
+    long[] clock = {0};
+    TripEngine engine =
+        new TripEngine(planned.end(), TWO_KM, (a, b) -> new CompletableFuture<>(), () -> clock[0], EngineOptions.defaults(), route);
+    double diagonal = Geo.haversine(W, planned.end());
+    double bearing = Geo.bearing(W, planned.end());
+    Double rangAt = null;
+    for (int t = 0; t <= 700 && rangAt == null; t++) {
+      clock[0] = t * 1000L;
+      LatLng p = Geo.destinationPoint(W, bearing, Math.min(diagonal, 15.0 * t));
+      engine.handleFix(Fix.at(p, 8, 15, clock[0]), clock[0]);
+      if (engine.snapshot(clock[0]).ringing() != null) rangAt = Geo.haversine(p, planned.end());
+    }
+    // On the road the bus really drives, 2 km left is 2 km in a straight line: it rings there.
+    assertTrue(rangAt != null && rangAt <= 2000 && rangAt >= 1980, "rang with " + rangAt + " m left");
+  }
+
+  @Test
+  void safetyCircleStaysOffWhenTheRoutePassesTheStopEarlier() {
+    // 5 km north, 300 m east, then 4 km back south to the stop: on the way out the bus passes
+    // 300 m from the stop. A circle would ring at the start; the road distance must decide.
+    RouteLine loop = new RouteLine(AccuracySimulation.walk(W, new double[][] {{0, 5000}, {90, 300}, {180, 4000}}, 100));
+    RouteData route = new RouteData(loop.points(), loop.length(), loop.length() / 15, RouteData.Kind.ROAD, "test");
+    long[] clock = {0};
+    TripEngine engine =
+        new TripEngine(loop.end(), TWO_KM, (a, b) -> CompletableFuture.completedFuture(route), () -> clock[0], EngineOptions.defaults(), route);
+    Double rangLeft = null;
+    for (int t = 0; t * 15.0 <= loop.length() && rangLeft == null; t++) {
+      clock[0] = t * 1000L;
+      double along = 15.0 * t;
+      engine.handleFix(Fix.at(loop.pointAt(along), 8, 15, clock[0]), clock[0]);
+      if (engine.snapshot(clock[0]).ringing() != null) rangLeft = loop.length() - along;
+    }
+    assertTrue(rangLeft != null && rangLeft <= 2000 && rangLeft >= 1980, "rang with " + rangLeft + " m of road left");
+  }
+
+  @Test
+  void safetyCircleChecksALongStraightSegmentThatRunsPastTheStop() {
+    // One straight 2.5 km segment passing 300 m south of the stop, then back west-northwest to it.
+    // The alarm point is on that same segment, after the bus has passed the stop: a circle would
+    // ring at the start, 4 km out. The part of the segment before the cut-off must be checked too.
+    LatLng stop = Geo.destinationPoint(W, 0, 3000);
+    LatLng beside = Geo.destinationPoint(stop, 180, 300);
+    RouteLine sparse =
+        new RouteLine(List.of(Geo.destinationPoint(beside, 270, 1000), Geo.destinationPoint(beside, 90, 1500), stop));
+    RouteData route = new RouteData(sparse.points(), sparse.length(), sparse.length() / 15, RouteData.Kind.ROAD, "test");
+    long[] clock = {0};
+    TripEngine engine =
+        new TripEngine(stop, TWO_KM, (a, b) -> CompletableFuture.completedFuture(route), () -> clock[0], EngineOptions.defaults(), route);
+    Double rangLeft = null;
+    for (int t = 0; t * 15.0 <= sparse.length() && rangLeft == null; t++) {
+      clock[0] = t * 1000L;
+      double along = 15.0 * t;
+      engine.handleFix(Fix.at(sparse.pointAt(along), 8, 15, clock[0]), clock[0]);
+      if (engine.snapshot(clock[0]).ringing() != null) rangLeft = sparse.length() - along;
+    }
+    assertTrue(rangLeft != null && rangLeft <= 2000 && rangLeft >= 1980, "rang with " + rangLeft + " m of road left");
+  }
+
+  @Test
   void prefetchedRouteIsReadyForTheFirstFix() {
     long[] clock = {0};
     AtomicInteger calls = new AtomicInteger();

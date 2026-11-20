@@ -28,8 +28,15 @@ public final class AlarmPolicy {
    * @param etaSec conservative seconds-to-arrival, NaN when unknown (stopped)
    * @param gpsLost no GPS fix for a while: remaining is an estimate
    * @param directDistance straight-line metres to the destination pin (infinite when unknown)
+   * @param circleM safety circle: being within this straight-line distance of the pin also counts
+   *     as reaching the alarm distance — a second check that needs no map matching (NaN = off)
    */
-  public record Input(long now, double remaining, double etaSec, boolean gpsLost, double directDistance) {}
+  public record Input(long now, double remaining, double etaSec, boolean gpsLost, double directDistance, double circleM) {
+
+    public Input(long now, double remaining, double etaSec, boolean gpsLost, double directDistance) {
+      this(now, remaining, etaSec, gpsLost, directDistance, Double.NaN);
+    }
+  }
 
   public AlarmPolicy(AlarmSettings settings, double arrivalRadiusM) {
     this(settings, arrivalRadiusM, 1500, 2 * 60_000);
@@ -75,7 +82,8 @@ public final class AlarmPolicy {
     }
 
     if (!approachFired) {
-      boolean byDistance = in.remaining() <= settings.distanceM();
+      boolean byCircle = !in.gpsLost() && !Double.isNaN(in.circleM()) && in.directDistance() <= in.circleM();
+      boolean byDistance = in.remaining() <= settings.distanceM() || byCircle;
       boolean byTime =
           settings.timeRuleEnabled() && !Double.isNaN(in.etaSec()) && in.etaSec() <= settings.timeSec();
       if (byDistance || byTime) {

@@ -425,6 +425,19 @@ export class TripClient {
     this.evaluate(base, true);
   }
 
+  private circleRoute: RoutePath | null = null;
+  private circleRadius: number | null = null;
+
+  /** The safety circle for the server's current route (worked out once per route). */
+  private circle(): number | null {
+    const route = this.localOnly ? null : this.route;
+    if (route !== this.circleRoute) {
+      this.circleRoute = route;
+      this.circleRadius = route ? route.safetyCircle(this.opts.destination, this.opts.settings.distanceM) : null;
+    }
+    return this.circleRadius;
+  }
+
   private evaluate(s: Snapshot, offline: boolean): void {
     const settings = this.opts.settings;
     const now = Date.now();
@@ -454,6 +467,7 @@ export class TripClient {
       distanceM: settings.distanceM,
       timeSec: settings.timeMin > 0 ? settings.timeMin * 60 : null,
       arrivalRadiusM: settings.mode === 'rail' ? 400 : 150,
+      circleM: this.circle(),
     });
     const before = this.localRinging;
     if (g.arrived && !this.localArrival && s.phase !== 'arrived') {

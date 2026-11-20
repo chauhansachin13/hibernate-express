@@ -21,6 +21,8 @@ even through dead zones, and even when there's no signal at the bus stand. No si
   second alarm on arrival in case you dozed off again.
 - **Real road distance** — GPS fixes are map-matched onto the road route (OSRM), safely through
   U-turns and roads used twice; automatic re-routing if the driver takes another road.
+- **Safety circle around your stop** — a second, straight-line check on top of the road distance.
+  It catches the alarm even if the bus takes a shortcut and the new route never arrives.
 - **ETA from your bus's real pace**, including signals and stops, reacting within about two minutes
   when the bus speeds up.
 - **Never misses because of signal** — see [Accuracy](#accuracy) below.
@@ -64,7 +66,7 @@ phone sends it. “Rang at” is the bus's true road distance or time left at th
 | 40 km/h, a fix every 5 s (battery saving) | 500 m | 500 m | on the point |
 | 80 km/h, a fix every 10 s (sparse GPS) | 2 km | 1,989 m | 0.5 s after the point |
 | 60 km/h, GPS lost for 70 s just before the point | 2 km | 2,017 m | 17 m early |
-| 50 km/h | 5 min | 5:00 | on time |
+| 50 km/h | 5 min | 5:03 | 3 s early |
 | City 25 km/h with 15 s stops | 5 min | 5:08 | 8 s early |
 
 Every arrival alarm rang 120–195 m before the stop.
@@ -76,6 +78,7 @@ fake clock, GPS and network:
 - after 3 s without an answer the phone checks the alarm rules itself;
 - in a dead zone it matches GPS fixes onto the planned road and rings within a second of the right
   point — on a bent road, where a straight-line guess would be 600 m early;
+- it applies the same safety circle as the server, so a wrong road match can't make it late;
 - with no GPS either, it counts down 15% faster than the bus's measured pace: early, never late;
 - with no signal at the start, the trip runs on the phone (straight-line distance, which can never be
   longer than the road, so never late) and moves to the server once it's reachable — without ringing
@@ -97,6 +100,7 @@ flowchart LR
   subgraph Server["Java server"]
     API[REST API] --> E[Trip engine]
     E --> FF[Fix filter] --> MM[Map matching] --> PE[Pace estimator] --> AP{Alarm policy<br/>distance OR time}
+    FF --> SC[Safety circle<br/>straight line to the stop] --> AP
     API --> S[Search<br/>Photon · Nominatim]
   end
   TC <-->|fixes / snapshots| API
@@ -112,6 +116,17 @@ flowchart LR
   the start. It waits for about 20 s of measured driving and then takes the faster window (errs early).
 - **Alarm policy** (`trip/AlarmPolicy.java`): distance or time, whichever first; snooze; arrival needs
   both the pin to be near *and* little road left.
+- **Safety circle** (`trip/TripEngine.java`, `frontend/src/core/route-path.ts`): a second distance
+  check that needs no map matching.
+  - **How it's drawn:** when a route arrives, the engine finds the alarm point (where X km of road is
+    left) and draws a circle around the stop that passes through it. A bus on the route enters the
+    circle exactly at the alarm point, and the alarm rings if either check says so.
+  - **Off the planned road:** after 10 s off it, the circle grows to the full X km. A straight line
+    is never longer than the road, so it can only ring early.
+  - **When it switches off:** if the route passes that close to the stop earlier (a loop or a U-turn
+    past it), the circle is turned off, because it would ring too soon.
+  - **Tested:** a bus takes a shortcut and re-routing never answers. Road distance alone rang 595 m
+    late; with the circle it rings on time.
 - **Between fixes** (`trip/TripEngine.java`): the remaining distance keeps counting down at the measured
   pace, so sparse GPS (a fix every 5–15 s) doesn't make the alarm late.
 
@@ -127,14 +142,14 @@ backend/                     Java 21+, Maven, no runtime dependencies (JDK HttpS
     parse/                   coordinates and map links, plus codes
     sim/                     ride simulator and the accuracy simulation
     geo/, json/              geo maths, a tiny JSON reader/writer
-  src/test/java/             JUnit 5 tests (120)
+  src/test/java/             JUnit 5 tests (123)
 frontend/                    phone web app: TypeScript, Vite, Leaflet — no framework
   src/api.ts                 client for the Java API
   src/trip-client.ts         runs a trip against the server, with the offline safety net
   src/app.ts, src/ui/        screens, bottom sheet, map, search box, animations
   src/core/, src/services/   geometry, formatting, sounds; GPS, alarm player, wake lock
   public/sw.js               offline app shell, map tile cache, notification actions
-  tests/                     Vitest (26)
+  tests/                     Vitest (31)
 docs/ACCURACY.md             the accuracy report
 ```
 
@@ -144,7 +159,7 @@ You need a JDK 21+ with Maven, and Node 20.19+.
 
 ```bash
 cd backend
-mvn package                                        # build + 120 tests → target/hibernate-express.jar
+mvn package                                        # build + 123 tests → target/hibernate-express.jar
 java -jar target/hibernate-express.jar serve       # API on http://localhost:8080
 ```
 

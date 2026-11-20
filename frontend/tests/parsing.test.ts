@@ -162,3 +162,46 @@ describe('alarm sounds', () => {
     expect(wav.getUint32(40, true)).toBe(samples.length * 2);
   });
 });
+
+describe('safety circle', () => {
+  const stop = { lat: 17.98, lng: 79.53 };
+
+  it('on a straight road is the alarm distance itself', () => {
+    const start = destinationPoint(stop, 270, 5000);
+    const road = new RoutePath([start, destinationPoint(stop, 270, 2500), stop]);
+    expect(road.safetyCircle(stop, 2000)).toBeCloseTo(2000, -1);
+  });
+
+  it('matches the alarm point on a bent road (straight line from the stop to that point)', () => {
+    // 4 km west-to-east, then 1 km north into the stop: the 2 km point is 1 km before the corner.
+    const corner = destinationPoint(stop, 180, 1000);
+    const road = new RoutePath([destinationPoint(corner, 270, 4000), corner, stop]);
+    const alarmPoint = road.pointAt(road.length - 2000);
+    expect(road.safetyCircle(stop, 2000)).toBeCloseTo(haversine(alarmPoint, stop), 3);
+  });
+
+  it('is off when the route passes the stop earlier (a U-turn or loop)', () => {
+    // Out past the stop 300 m away, then back down a parallel road to it.
+    const start = destinationPoint(destinationPoint(stop, 270, 300), 180, 1000);
+    const top = destinationPoint(start, 0, 5000);
+    const road = new RoutePath([start, top, destinationPoint(top, 90, 300), stop]);
+    expect(road.safetyCircle(stop, 2000)).toBeNull();
+  });
+
+  it('is off when one long straight segment runs past the stop before the alarm point', () => {
+    // 2.5 km straight, passing 300 m south of the stop, then back to it: the alarm point is on that
+    // same segment, so the segment must be checked up to the cut-off, not skipped.
+    const beside = destinationPoint(stop, 180, 300);
+    const road = new RoutePath([destinationPoint(beside, 270, 1000), destinationPoint(beside, 90, 1500), stop]);
+    expect(road.safetyCircle(stop, 2000)).toBeNull();
+  });
+
+  it('rings the distance alarm when the bus is inside the circle, whatever the road estimate says', () => {
+    const base = { remaining: 3500, ageMs: 0, paceMps: 12, distanceM: 2000, timeSec: null, arrivalRadiusM: 150 };
+    expect(offlineEstimate({ ...base, directNow: 2100, circleM: 2000 }).approach).toBe(false);
+    const inside = offlineEstimate({ ...base, directNow: 1990, circleM: 2000 });
+    expect(inside.approach).toBe(true);
+    expect(inside.rule).toBe('distance');
+    expect(offlineEstimate({ ...base, directNow: 1990, circleM: null }).approach).toBe(false);
+  });
+});
