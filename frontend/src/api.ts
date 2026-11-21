@@ -156,7 +156,33 @@ async function request<T>(
 
 const p6 = (v: number) => v.toFixed(6);
 
+let wakeCall: Promise<boolean> | null = null;
+
 export const api = {
+  /**
+   * Free hosting puts the server to sleep when nobody uses it, and waking it takes up to a minute.
+   * The app pings it as it opens, so it is awake by the first search. True once it answers.
+   */
+  wake(): Promise<boolean> {
+    wakeCall ??= (async () => {
+      const deadline = Date.now() + 90_000;
+      while (navigator.onLine !== false && Date.now() < deadline) {
+        try {
+          await request<unknown>('GET', '/health', undefined, { timeoutMs: Math.max(1000, deadline - Date.now()) });
+          return true;
+        } catch (err) {
+          // No answer yet, or the host answering for a server that is still starting: try again.
+          if (err instanceof ApiError && err.status > 0 && err.status < 500) return false;
+          await new Promise((resolve) => window.setTimeout(resolve, 3000));
+        }
+      }
+      return false;
+    })().finally(() => {
+      wakeCall = null;
+    });
+    return wakeCall;
+  },
+
   search(q: string, bias: { lat: number; lng: number; zoom: number } | null, explicit: boolean, signal?: AbortSignal) {
     const params = new URLSearchParams({ q });
     if (bias) {

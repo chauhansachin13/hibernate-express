@@ -1,0 +1,18 @@
+# Render Blueprint for the Java API (the phone app itself is hosted on Netlify).
+services:
+  - type: web
+    name: hibernate-express-api
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    autoDeploy: true
+    buildFilter:
+      paths:
+        - backend/**
+    envVars:
+      - key: HX_ALLOWED_ORIGIN
+        value: https://hibernate-express.netlify.app

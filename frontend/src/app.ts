@@ -198,6 +198,7 @@ export class App {
   }
 
   start(): void {
+    void api.wake(); // free hosting sleeps when idle: start waking the server before the first search
     removeKey('hx.trip.v1'); // trips saved by the old in-browser engine can't be resumed
     // Browsers without overflow: clip can still scroll the app shell when an input gets focus.
     this.app.addEventListener('scroll', () => {

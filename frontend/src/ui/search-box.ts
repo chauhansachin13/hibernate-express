@@ -1,4 +1,4 @@
-import { api, type Place, type SearchResult } from '../api';
+import { api, ApiError, type Place, type SearchResult } from '../api';
 import { formatDistance } from '../core/format';
 import { haversine, type LatLng } from '../core/geo';
 import { stagger } from './fx';
@@ -76,7 +76,7 @@ export class SearchBox {
     this.timer = window.setTimeout(() => void this.run(q, explicit), explicit ? 0 : 250);
   }
 
-  private async run(q: string, explicit: boolean): Promise<void> {
+  private async run(q: string, explicit: boolean, retried = false): Promise<void> {
     const key = `${explicit ? '!' : ''}${q.toLowerCase()}`;
     const cached = this.cache.get(key);
     if (cached) {
@@ -94,8 +94,19 @@ export class SearchBox {
       if (ctrl.signal.aborted) return;
       this.cache.set(key, result);
       this.render(result, q, explicit);
-    } catch {
+    } catch (err) {
       if (ctrl.signal.aborted) return;
+      // Free hosting sleeps when idle: if the server is still waking up, wait for it and retry once.
+      if (!retried && err instanceof ApiError && (err.status === 0 || err.status >= 500)) {
+        this.o.status.textContent = 'Waking up the server — up to a minute after a quiet spell…';
+        this.open();
+        const awake = await api.wake();
+        if (ctrl.signal.aborted) return;
+        if (awake) {
+          void this.run(q, explicit, true);
+          return;
+        }
+      }
       this.rows = [];
       this.o.list.replaceChildren();
       this.o.status.textContent = "Search isn't reachable right now. Press Enter to retry, or tap the map.";
