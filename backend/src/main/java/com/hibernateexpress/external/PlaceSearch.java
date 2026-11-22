@@ -14,6 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.logging.Logger;
 
 /**
  * One search box for everything, like Google Maps: place names and addresses (Photon, plus
@@ -27,6 +28,7 @@ public final class PlaceSearch {
 
   static final int LIMIT = 15;
   private static final int NEARBY_MAX = 8;
+  private static final Logger LOG = Logger.getLogger(PlaceSearch.class.getName());
   /** Nearby results that arrive later are cached for the next keystroke rather than waited for. */
   private static final long NEARBY_BUDGET_MS = 5000;
   /** Same name this close = the same place from two sources. */
@@ -81,7 +83,10 @@ public final class PlaceSearch {
   // ---------------------------------------------------------------------- places
 
   private CompletableFuture<Result> places(String q, LatLng bias, int zoom, boolean explicit) {
-    CompletableFuture<List<Place>> text = geocoder.search(q, bias, zoom).handle((v, e) -> e == null ? v : null);
+    CompletableFuture<List<Place>> text = geocoder.search(q, bias, zoom).handle((v, e) -> {
+      if (e != null) LOG.info("Quick search failed: " + rootCause(e));
+      return e == null ? v : null;
+    });
     CompletableFuture<List<Place>> thorough =
         explicit ? geocoder.searchFallback(q, bias).handle((v, e) -> e == null ? v : null) : CompletableFuture.completedFuture(List.of());
     CompletableFuture<List<Place>> near = nearby(NearbyCategory.match(q), bias, zoom);
@@ -297,5 +302,12 @@ public final class PlaceSearch {
 
   private static CompletableFuture<Result> done(List<Place> places, String message) {
     return CompletableFuture.completedFuture(new Result(places, false, message));
+  }
+
+  /** The innermost exception, for the server log (async failures arrive wrapped). */
+  private static String rootCause(Throwable e) {
+    Throwable t = e;
+    while (t.getCause() != null && t.getCause() != t) t = t.getCause();
+    return t.getClass().getSimpleName() + ": " + t.getMessage();
   }
 }

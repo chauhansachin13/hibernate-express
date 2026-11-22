@@ -116,7 +116,9 @@ public final class GeocodingClient implements Geocoder, NearbyFinder {
     List<Place> cached = searchCache.get(cacheKey);
     if (cached != null) return CompletableFuture.completedFuture(cached);
     return http.get(url.toString(), TIMEOUT).thenApply(res -> {
-      if (res.status() != 200) throw new IllegalStateException("Search failed (" + res.status() + ")");
+      if (res.status() != 200) {
+        throw new IllegalStateException("Photon search failed (" + res.status() + "): " + snippet(res.body()));
+      }
       List<Place> places = dedupe(fromPhoton(Json.object(Json.parse(res.body())), null, true));
       searchCache.put(cacheKey, places);
       return places;
@@ -337,5 +339,12 @@ public final class GeocodingClient implements Geocoder, NearbyFinder {
 
   private static String encode(String s) {
     return URLEncoder.encode(s, StandardCharsets.UTF_8);
+  }
+
+  /** The start of an error body on one line, for the server log. */
+  private static String snippet(String body) {
+    if (body == null) return "";
+    String s = body.replaceAll("\\s+", " ").trim();
+    return s.length() > 160 ? s.substring(0, 160) + "…" : s;
   }
 }
