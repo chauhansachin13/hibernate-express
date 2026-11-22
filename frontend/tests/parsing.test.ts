@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { wantsPhoton } from '../src/api';
 import { formatAgo, formatDistance, formatDuration, formatSpeed, splitDistance } from '../src/core/format';
 import { destinationPoint, haversine } from '../src/core/geo';
 import { EARLY_FACTOR, offlineEstimate, type GuardInput } from '../src/core/offline-guard';
@@ -203,5 +204,27 @@ describe('safety circle', () => {
     expect(inside.approach).toBe(true);
     expect(inside.rule).toBe('distance');
     expect(offlineEstimate({ ...base, directNow: 1990, circleM: null }).approach).toBe(false);
+  });
+});
+
+describe('which searches the phone sends to Photon itself', () => {
+  it('asks Photon for place names, near-me searches and addresses', () => {
+    for (const q of ['Kazipet', 'hyderbad', 'atm in ameerpet', 'bus stand near me', '12 MG Road Hanamkonda', 'Hotel 22+']) {
+      expect(wantsPhoton(q), q).toBe(true);
+    }
+  });
+
+  it('leaves links, coordinates and plus codes to the server alone', () => {
+    for (const q of [
+      'https://maps.app.goo.gl/abc123',
+      'https://www.google.com/maps/@17.98,79.53,15z',
+      '17.9833, 79.5308',
+      '17.9833 79.5308',
+      '17.9833° N, 79.5308° E',
+      'XGMJ+F7 Warangal',
+      '7J9WXGMJ+F7',
+    ]) {
+      expect(wantsPhoton(q), q).toBe(false);
+    }
   });
 });

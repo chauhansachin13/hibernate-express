@@ -152,6 +152,32 @@ class ApiServerTest {
   }
 
   @Test
+  void searchRanksPhotonResultsSentByThePhone() throws Exception {
+    // A Photon reply as the phone fetched it: the server's own geocoder would answer "National
+    // Institute of Technology" for anything, so the result shows the phone's data was used.
+    Map<String, Object> station = Map.of(
+        "type", "Feature",
+        "geometry", Map.of("type", "Point", "coordinates", List.of(79.5113, 17.9748)),
+        "properties", Map.of("name", "Kazipet Junction", "osm_key", "railway", "osm_value", "station", "state", "Telangana"));
+    Map<String, Object> body = Map.of(
+        "q", "kazipet junction",
+        "lat", 17.98,
+        "lng", 79.53,
+        "zoom", 13,
+        "explicit", false,
+        "photon", List.of(Map.of("q", "Kazipet Junction", "result", Map.of("type", "FeatureCollection", "features", List.of(station)))));
+    Reply reply = call("POST", "/api/search", body);
+    assertEquals(200, reply.status());
+    assertEquals("Kazipet Junction", Json.object(Json.list(reply.json(), "places").get(0)).get("name"));
+    assertNull(reply.json().get("photonNeeded"));
+
+    // Junk from a phone is ignored, never an error.
+    Reply junk = call("POST", "/api/search", Map.of("q", "NIT Warangal", "photon", List.of(Map.of("q", "NIT Warangal", "result", "nonsense"))));
+    assertEquals(200, junk.status());
+    assertEquals(400, call("POST", "/api/search", Map.of("q", "a")).status());
+  }
+
+  @Test
   void routePreviewReturnsACompactPolyline() throws Exception {
     Reply r = call("GET", "/api/route?from=17.93,79.55&to=" + DEST.lat() + "," + DEST.lng(), null);
     assertEquals(200, r.status());

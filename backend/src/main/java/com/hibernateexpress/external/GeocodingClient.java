@@ -341,6 +341,18 @@ public final class GeocodingClient implements Geocoder, NearbyFinder {
     return URLEncoder.encode(s, StandardCharsets.UTF_8);
   }
 
+  /**
+   * Photon type-ahead results the phone fetched itself, read exactly like the server's own. Bad
+   * input gives an empty list: it only ever shapes the reply to the phone that sent it.
+   */
+  public static List<Place> parsePhotonSearch(Object json) {
+    try {
+      return dedupe(fromPhoton(Json.object(json), null, true));
+    } catch (RuntimeException e) {
+      return List.of();
+    }
+  }
+
   /** The start of an error body on one line, for the server log. */
   private static String snippet(String body) {
     if (body == null) return "";

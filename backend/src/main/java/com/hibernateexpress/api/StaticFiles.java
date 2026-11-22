@@ -37,7 +37,7 @@ final class StaticFiles implements HttpHandler {
   static final String CSP =
       "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
           + "img-src 'self' data: blob: https://tile.openstreetmap.org; font-src 'self' data:; "
-          + "connect-src 'self' https://tile.openstreetmap.org; media-src 'self' blob: data:; "
+          + "connect-src 'self' https://photon.komoot.io https://tile.openstreetmap.org; media-src 'self' blob: data:; "
           + "worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; "
           + "form-action 'self'; frame-ancestors 'none'";
 

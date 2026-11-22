@@ -38,6 +38,8 @@ export interface SearchResult {
   more: boolean;
   /** Why the list is empty, when there's something useful to say. */
   message?: string;
+  /** Type-ahead look-ups the server couldn't make itself: fetch them from Photon and ask again. */
+  photonNeeded?: string[];
 }
 
 export interface TripSettings {
@@ -156,6 +158,45 @@ async function request<T>(
 
 const p6 = (v: number) => v.toFixed(6);
 
+type Bias = { lat: number; lng: number; zoom: number };
+type PhotonLookup = { q: string; result: unknown };
+
+const PHOTON = 'https://photon.komoot.io/api/';
+
+/**
+ * Links, coordinates and plus codes are read by the Java server alone; anything else is a place
+ * name, so the phone asks Photon for it (the public Photon server refuses some cloud hosts).
+ */
+export function wantsPhoton(q: string): boolean {
+  if (/https?:\/\/|goo\.gl|maps\.app|openstreetmap\.org/i.test(q)) return false;
+  if (/^\s*[-+]?\d{1,3}(\.\d+)?°?\s*[NS]?\s*[,\s]\s*[-+]?\d{1,3}(\.\d+)?°?\s*[EW]?\s*$/i.test(q)) return false;
+  return !/\b[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{0,3}(?![\w+])/i.test(q);
+}
+
+/** Photon type-ahead from the phone itself, asked exactly as the server would ask. Null on failure. */
+async function photon(q: string, bias: Bias | null, signal?: AbortSignal): Promise<PhotonLookup | null> {
+  const params = new URLSearchParams({ q, limit: '24', lang: 'en' });
+  if (bias) {
+    params.set('lat', bias.lat.toFixed(4));
+    params.set('lon', bias.lng.toFixed(4));
+    params.set('zoom', String(Math.min(16, Math.max(4, Math.round(bias.zoom)))));
+    params.set('location_bias_scale', '0.4');
+  }
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 8000);
+  const forward = () => controller.abort();
+  signal?.addEventListener('abort', forward, { once: true });
+  try {
+    const res = await fetch(`${PHOTON}?${params}`, { signal: controller.signal });
+    return res.ok ? { q, result: await res.json() } : null;
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timer);
+    signal?.removeEventListener('abort', forward);
+  }
+}
+
 let wakeCall: Promise<boolean> | null = null;
 
 export const api = {
@@ -183,15 +224,30 @@ export const api = {
     return wakeCall;
   },
 
-  search(q: string, bias: { lat: number; lng: number; zoom: number } | null, explicit: boolean, signal?: AbortSignal) {
-    const params = new URLSearchParams({ q });
-    if (bias) {
-      params.set('lat', bias.lat.toFixed(4));
-      params.set('lng', bias.lng.toFixed(4));
-      params.set('zoom', String(Math.round(bias.zoom)));
+  /**
+   * Place search. The phone fetches Photon's type-ahead results itself and the Java server merges
+   * and ranks them with near-me places, plus codes and links. If the server needs another place
+   * looked up first ("ameerpet" in "atm in ameerpet"), it says so and the phone asks once more.
+   */
+  async search(q: string, bias: Bias | null, explicit: boolean, signal?: AbortSignal): Promise<SearchResult> {
+    const opts = { signal, timeoutMs: explicit ? 30_000 : 20_000 };
+    const base = {
+      q,
+      lat: bias ? Number(bias.lat.toFixed(4)) : null,
+      lng: bias ? Number(bias.lng.toFixed(4)) : null,
+      zoom: bias ? Math.round(bias.zoom) : null,
+      explicit,
+    };
+    const lookups: PhotonLookup[] = [];
+    if (wantsPhoton(q)) {
+      const own = await photon(q, bias, signal);
+      if (own) lookups.push(own);
     }
-    if (explicit) params.set('explicit', '1');
-    return request<SearchResult>('GET', `/search?${params}`, undefined, { signal, timeoutMs: explicit ? 30_000 : 20_000 });
+    const result = await request<SearchResult>('POST', '/search', { ...base, photon: lookups }, opts);
+    const needed = (result.photonNeeded ?? []).filter((n) => !lookups.some((l) => l.q.toLowerCase() === n.toLowerCase())).slice(0, 2);
+    if (needed.length === 0) return result;
+    const more = (await Promise.all(needed.map((n) => photon(n, bias, signal)))).filter((l): l is PhotonLookup => l !== null);
+    return more.length ? request<SearchResult>('POST', '/search', { ...base, photon: [...lookups, ...more] }, opts) : result;
   },
 
   reverse(at: LatLng, signal?: AbortSignal) {

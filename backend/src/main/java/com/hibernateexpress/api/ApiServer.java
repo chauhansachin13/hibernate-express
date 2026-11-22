@@ -1,7 +1,9 @@
 package com.hibernateexpress.api;
 
+import com.hibernateexpress.external.GeocodingClient;
 import com.hibernateexpress.external.Place;
 import com.hibernateexpress.external.PlaceSearch;
+import com.hibernateexpress.external.PrefetchedGeocoder;
 import com.hibernateexpress.external.RoutingException;
 import com.hibernateexpress.geo.Geo;
 import com.hibernateexpress.geo.LatLng;
@@ -51,6 +53,7 @@ import java.util.logging.Logger;
  * <pre>
  * GET    /api/health
  * GET    /api/search?q=&amp;lat=&amp;lng=&amp;zoom=&amp;explicit=1   place search (type-ahead)
+ * POST   /api/search   {q, lat, lng, zoom, explicit, photon[]}   the same, with the phone's Photon results
  * GET    /api/reverse?lat=&amp;lng=                          name a dropped pin
  * GET    /api/route?from=lat,lng&amp;to=lat,lng              road route preview
  * POST   /api/coordinates      {text}                    parse pasted coordinates / map links
@@ -67,6 +70,7 @@ public final class ApiServer {
   private static final Logger LOG = Logger.getLogger(ApiServer.class.getName());
   private static final int MAX_BODY_BYTES = 512 * 1024;
   private static final int MAX_FIXES_PER_REQUEST = 600;
+  private static final int MAX_PHONE_LOOKUPS = 4;
   private static final long WAIT_SECONDS = 20;
   private static final long MAX_FIX_AGE_MS = 15 * 60_000;
 
@@ -172,8 +176,9 @@ public final class ApiServer {
         return health();
       }
       case "search" -> {
-        requireMethod(method, "GET");
         limit(ip);
+        if (method.equals("POST")) return searchWithPhoneResults(Json.object(readJson(ex)));
+        requireMethod(method, "GET");
         return search(query);
       }
       case "reverse" -> {
@@ -249,17 +254,56 @@ public final class ApiServer {
   }
 
   private Object search(Map<String, String> query) {
-    String q = query.getOrDefault("q", "").trim();
-    if (q.length() < 2) throw ApiError.badRequest("Type at least 2 characters");
-    if (q.length() > 200) q = q.substring(0, 200);
     LatLng bias = latLngParams(query.get("lat"), query.get("lng"));
     int zoom = (int) doubleParam(query, "zoom", 12);
     boolean explicit = "1".equals(query.get("explicit")) || "true".equals(query.get("explicit"));
-    PlaceSearch.Result result = await(placeSearch.search(q, bias, zoom, explicit), "Search");
+    return runSearch(query.getOrDefault("q", ""), bias, zoom, explicit, null);
+  }
+
+  /**
+   * The same search, plus type-ahead results the phone fetched from Photon itself
+   * ({@code photon: [{q, result}]}): the public Photon server refuses search requests from some
+   * cloud hosts, while each phone has its own connection. {@code photonNeeded} in the reply lists
+   * look-ups the server still couldn't make ("ameerpet" in "atm in ameerpet"), for the phone to
+   * fetch and ask once more. The ranking, near-me places, plus codes and links stay in Java.
+   */
+  private Object searchWithPhoneResults(Map<String, Object> body) {
+    LatLng bias =
+        body.get("lat") instanceof Number lat && body.get("lng") instanceof Number lng
+            ? new LatLng(lat.doubleValue(), lng.doubleValue())
+            : null;
+    if (bias != null && !bias.isValid()) bias = null;
+    int zoom = body.get("zoom") instanceof Number z ? z.intValue() : 12;
+    boolean explicit = Boolean.TRUE.equals(body.get("explicit"));
+    Map<String, List<Place>> supplied = new HashMap<>();
+    List<?> photon = Json.list(body, "photon");
+    for (Object item : photon.subList(0, Math.min(photon.size(), MAX_PHONE_LOOKUPS))) {
+      Map<String, Object> entry = Json.object(item);
+      String lookup = Json.string(entry, "q", "").trim();
+      if (lookup.isEmpty() || lookup.length() > 200) continue;
+      supplied.put(lookup, GeocodingClient.parsePhotonSearch(entry.get("result")));
+    }
+    return runSearch(Json.string(body, "q", ""), bias, zoom, explicit, new PrefetchedGeocoder(services.geocoder(), supplied));
+  }
+
+  private Object runSearch(String raw, LatLng bias, int zoom, boolean explicit, PrefetchedGeocoder phone) {
+    String q = raw.trim();
+    if (q.length() < 2) throw ApiError.badRequest("Type at least 2 characters");
+    if (q.length() > 200) q = q.substring(0, 200);
+    PlaceSearch search = phone == null ? placeSearch : new PlaceSearch(phone, services.nearby(), services.links());
+    PlaceSearch.Result result;
+    try {
+      result = await(search.search(q, bias, zoom, explicit), "Search");
+    } catch (ApiError e) {
+      // Nothing found only because a look-up is missing: the phone fetches it and asks again.
+      if (phone == null || phone.missing().isEmpty() || e.status() != 502) throw e;
+      result = new PlaceSearch.Result(List.of(), true, null);
+    }
     Map<String, Object> m = new LinkedHashMap<>();
     m.put("places", result.places().stream().map(Place::toJson).toList());
     m.put("more", result.more());
     if (result.message() != null) m.put("message", result.message());
+    if (phone != null && !phone.missing().isEmpty()) m.put("photonNeeded", phone.missing());
     return m;
   }
 

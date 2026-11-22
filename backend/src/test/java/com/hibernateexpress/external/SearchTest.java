@@ -16,6 +16,7 @@ import com.hibernateexpress.parse.PlusCode;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import org.junit.jupiter.api.Test;
@@ -250,6 +251,31 @@ class SearchTest {
     Place atm = search.search("atm in ameerpet", WARANGAL, 13, false).join().places().get(0);
     assertEquals("Closest ATM", atm.name());
     assertEquals(AMEERPET.lat() + 0.001, atm.lat(), 1e-9);
+  }
+
+  @Test
+  void usesThePhonesPhotonResultsWhenPhotonRefusesTheServer() {
+    FakeGeocoder geo = new FakeGeocoder();
+    geo.failText = true; // the public Photon server refuses this host
+    NearbyFinder closest = (c, p) -> done(place("Closest " + c.label(), p.lat() + 0.001, p.lng(), c.label()));
+
+    PrefetchedGeocoder phone = new PrefetchedGeocoder(geo, Map.of("Kazipet", List.of(place("Kazipet", 17.98, 79.53, "Town"))));
+    PlaceSearch.Result kazipet = new PlaceSearch(phone, closest, LinkResolver.NONE).search("kazipet ", WARANGAL, 13, false).join();
+    assertEquals("Kazipet", kazipet.places().get(0).name());
+    assertTrue(phone.missing().isEmpty());
+
+    // "atm in ameerpet": the phone can't know the server needs Ameerpet first. The reply says so...
+    PrefetchedGeocoder first = new PrefetchedGeocoder(geo, Map.of("atm in ameerpet", List.of()));
+    new PlaceSearch(first, closest, LinkResolver.NONE).search("atm in ameerpet", WARANGAL, 13, false).join();
+    assertEquals(List.of("ameerpet"), first.missing());
+
+    // ...and with it sent along, the ATMs around Ameerpet come first, as on a server Photon accepts.
+    PrefetchedGeocoder second = new PrefetchedGeocoder(
+        geo, Map.of("atm in ameerpet", List.of(), "ameerpet", List.of(place("Ameerpet", AMEERPET.lat(), AMEERPET.lng(), "Area"))));
+    Place atm = new PlaceSearch(second, closest, LinkResolver.NONE).search("atm in ameerpet", WARANGAL, 13, false).join().places().get(0);
+    assertEquals("Closest ATM", atm.name());
+    assertEquals(AMEERPET.lat() + 0.001, atm.lat(), 1e-9);
+    assertTrue(second.missing().isEmpty());
   }
 
   @Test
