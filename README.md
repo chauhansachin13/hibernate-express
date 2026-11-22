@@ -10,6 +10,9 @@ when you want to be woken up, and doze off. A **Java server** follows your bus a
 route** and the phone rings a loud alarm (plus vibration and a notification) before you get there —
 even through dead zones, and even when there's no signal at the bus stand. No sign-up, no app store.
 
+**Try it on your phone: https://hibernate-express.netlify.app** (the Java server runs on Render's free
+plan and naps when nobody uses it, so the first search after a quiet spell can take up to a minute).
+
 ## Features
 
 - **One search box, like Google Maps** — place names, addresses, villages and PIN codes, with typos
@@ -71,6 +74,16 @@ phone sends it. “Rang at” is the bus's true road distance or time left at th
 
 Every arrival alarm rang 120–195 m before the stop.
 
+The same trips against the **deployed** server on Render's free plan (Singapore), on 22 Nov 2026:
+
+| Live trip on Render | Alarm | Rang at |
+|---|---:|---:|
+| Highway 60 km/h, a fix every second | 2 km | 1,993 m |
+| 40 km/h, a fix every 5 s | 500 m | 522 m |
+| 50 km/h | 5 min | 5:00 |
+
+Both arrival alarms rang 133–193 m before the stop.
+
 **3. When the server can't be reached.** The phone keeps the alarm working on its own
 (`frontend/src/trip-client.ts`), and the tests in `frontend/tests/trip-client.test.ts` prove it with a
 fake clock, GPS and network:
@@ -96,15 +109,19 @@ flowchart LR
     TC --> UI[Ride screen · alarm]
     TC -. dead zone .-> SN[Safety net<br/>route matching · dead reckoning]
     SN --> UI
+    SB[Search box]
   end
-  subgraph Server["Java server"]
+  subgraph Server["Java server (Render)"]
     API[REST API] --> E[Trip engine]
     E --> FF[Fix filter] --> MM[Map matching] --> PE[Pace estimator] --> AP{Alarm policy<br/>distance OR time}
     FF --> SC[Safety circle<br/>straight line to the stop] --> AP
-    API --> S[Search<br/>Photon · Nominatim]
+    API --> S[Search ranking<br/>near-me · plus codes · links]
   end
   TC <-->|fixes / snapshots| API
+  SB -->|type-ahead| PH[(Photon)]
+  SB -->|Photon results to rank| API
   E --> OSRM[(OSRM routing)]
+  S --> NOM[(Nominatim)]
 ```
 
 - **Map matching** (`trip/RouteTracker.java`): each fix is projected onto the route inside a window
@@ -129,6 +146,11 @@ flowchart LR
     late; with the circle it rings on time.
 - **Between fixes** (`trip/TripEngine.java`): the remaining distance keeps counting down at the measured
   pace, so sparse GPS (a fix every 5–15 s) doesn't make the alarm late.
+- **Search** (`external/PlaceSearch.java`, `frontend/src/api.ts`): the phone fetches Photon's
+  type-ahead results over its own connection, and the Java server ranks them together with near-me
+  places, plus codes and map links. The public Photon server refuses search requests from cloud hosts
+  such as Render, while reverse look-ups and OSRM routing work there. When the server needs another
+  place found first ("Ameerpet" in "atm in ameerpet"), it says so and the phone asks once more.
 
 ## Project layout
 
@@ -142,14 +164,14 @@ backend/                     Java 21+, Maven, no runtime dependencies (JDK HttpS
     parse/                   coordinates and map links, plus codes
     sim/                     ride simulator and the accuracy simulation
     geo/, json/              geo maths, a tiny JSON reader/writer
-  src/test/java/             JUnit 5 tests (123)
+  src/test/java/             JUnit 5 tests (125)
 frontend/                    phone web app: TypeScript, Vite, Leaflet — no framework
   src/api.ts                 client for the Java API
   src/trip-client.ts         runs a trip against the server, with the offline safety net
   src/app.ts, src/ui/        screens, bottom sheet, map, search box, animations
   src/core/, src/services/   geometry, formatting, sounds; GPS, alarm player, wake lock
   public/sw.js               offline app shell, map tile cache, notification actions
-  tests/                     Vitest (31)
+  tests/                     Vitest (33)
 docs/ACCURACY.md             the accuracy report
 ```
 
@@ -159,7 +181,7 @@ You need a JDK 21+ with Maven, and Node 20.19+.
 
 ```bash
 cd backend
-mvn package                                        # build + 123 tests → target/hibernate-express.jar
+mvn package                                        # build + 125 tests → target/hibernate-express.jar
 java -jar target/hibernate-express.jar serve       # API on http://localhost:8080
 ```
 
@@ -189,6 +211,7 @@ Other commands: `mvn test` (backend tests), `npm test` and `npm run typecheck` (
 |---|---|---|
 | `GET` | `/api/health` | Status |
 | `GET` | `/api/search?q=&lat=&lng=&zoom=&explicit=1` | Places, near-me results, coordinates, plus codes, map links |
+| `POST` | `/api/search` | The same, ranking Photon results the phone sends (`photon: [{q, result}]`) |
 | `GET` | `/api/reverse?lat=&lng=` | Names a point |
 | `GET` | `/api/route?from=lat,lng&to=lat,lng` | Road route (encoded polyline) |
 | `POST` | `/api/coordinates` | Reads coordinates or a map link from text |
@@ -204,12 +227,38 @@ address.
 
 ## Deploying
 
-- **Phone app** — static files in `frontend/dist`. `frontend/netlify.toml` has the build settings and
-  security headers. If the API runs on another host, build with `VITE_API_BASE=https://your-api.example`
-  and add that origin to `connect-src` in the Content-Security-Policy.
-- **Java server** — any host with Java 21+:
-  `java -jar hibernate-express.jar serve` (environment: `PORT`, `HX_ALLOWED_ORIGIN` = the app's origin
-  for CORS, `HX_STATIC` to also serve the app).
+The live app runs on two free hosts:
+
+- **Java server on Render**: https://hibernate-express-api.onrender.com, Singapore region.
+  - `render.yaml` is a Render Blueprint that builds `backend/Dockerfile`.
+  - The Docker build runs every test, including the accuracy simulation, so a build that fails them
+    never goes live.
+  - The repo is linked as a public repository, so Render doesn't redeploy on push. After backend
+    changes, open the service and choose **Manual Deploy → Deploy latest commit**.
+  - Free instances sleep after 15 minutes without traffic and take up to a minute to wake. The app
+    pings the server as it opens, and search retries by itself. A trip started while it wakes runs
+    on the phone until the server answers.
+- **Phone app on Netlify**: https://hibernate-express.netlify.app.
+  - `frontend/netlify.toml` holds the build settings, `VITE_API_BASE` (the Render address) and the
+    security headers.
+  - To deploy, build it, then upload it:
+
+    ```bash
+    cd frontend && VITE_API_BASE=https://hibernate-express-api.onrender.com npm run build
+    ```
+
+    ```bash
+    npx netlify-cli deploy --prod --no-build --dir dist
+    ```
+
+On any other host with Java 21+, run `java -jar hibernate-express.jar serve`. It reads three
+environment settings:
+
+| Setting | What it does |
+|---|---|
+| `PORT` | The port to listen on |
+| `HX_ALLOWED_ORIGIN` | The app's origin, for CORS |
+| `HX_STATIC` | A folder of built app files, to also serve the app |
 
 ## Tips for a perfect nap
 
@@ -220,10 +269,14 @@ address.
 
 ## Privacy
 
-No account and no analytics. During a trip the Hibernate Express server receives your GPS positions to
-follow you along the road; the trip is deleted when it ends (or after 3 hours idle). Through the
-server, search text goes to Photon / Nominatim and a trip's start and end to OSRM; short Google Maps
-links you paste are expanded by asking Google.
+No account and no analytics.
+
+- **GPS:** during a trip, the Hibernate Express server receives your GPS positions to follow you
+  along the road. The trip is deleted when it ends, or after 3 hours idle.
+- **Search:** what you type goes from your phone to Photon (komoot) and to the server. A thorough
+  search ("Search more places") also asks Nominatim.
+- **Routing:** a trip's start and end go to OSRM through the server.
+- **Map links:** short Google Maps links you paste are expanded by asking Google.
 
 ## Credits
 
