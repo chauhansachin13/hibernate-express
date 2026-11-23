@@ -83,21 +83,34 @@ public final class PlaceSearch {
   // ---------------------------------------------------------------------- places
 
   private CompletableFuture<Result> places(String q, LatLng bias, int zoom, boolean explicit) {
-    CompletableFuture<List<Place>> text = geocoder.search(q, bias, zoom).handle((v, e) -> {
-      if (e != null) LOG.info("Quick search failed: " + rootCause(e));
-      return e == null ? v : null;
-    });
+    // Short forms written out: "kazipet jn" → "kazipet junction" (the map data spells words out).
+    String expanded = QueryWords.expand(q);
+    String main = expanded != null ? expanded : q;
+    CompletableFuture<List<Place>> text = quick(q, bias, zoom);
+    CompletableFuture<List<Place>> textFull = expanded != null ? quick(expanded, bias, zoom) : CompletableFuture.completedFuture(null);
     CompletableFuture<List<Place>> thorough =
-        explicit ? geocoder.searchFallback(q, bias).handle((v, e) -> e == null ? v : null) : CompletableFuture.completedFuture(List.of());
-    CompletableFuture<List<Place>> near = nearby(NearbyCategory.match(q), bias, zoom);
-    return CompletableFuture.allOf(text, thorough, near).thenApply(ignored -> {
+        explicit ? geocoder.searchFallback(main, bias).handle((v, e) -> e == null ? v : null) : CompletableFuture.completedFuture(List.of());
+    CompletableFuture<List<Place>> near = nearby(NearbyCategory.match(main), bias, zoom);
+    return CompletableFuture.allOf(text, textFull, thorough, near).thenApply(ignored -> {
       List<Place> t = text.join();
+      List<Place> tf = textFull.join();
       List<Place> m = thorough.join();
       List<Place> n = near.join();
-      boolean textFailed = t == null && (!explicit || m == null);
+      boolean textFailed = t == null && tf == null && (!explicit || m == null);
       if (textFailed && n.isEmpty()) throw new IllegalStateException("Search isn't reachable right now");
-      List<Place> merged = merge(n, t == null ? List.of() : t, m == null ? List.of() : m, q, bias);
+      List<Place> typed = new ArrayList<>();
+      if (tf != null) typed.addAll(tf);
+      if (t != null) typed.addAll(t);
+      List<Place> merged = merge(n, typed, m == null ? List.of() : m, main, bias);
       return new Result(merged, !explicit, null);
+    });
+  }
+
+  /** Photon type-ahead for one query; null when it couldn't be reached. */
+  private CompletableFuture<List<Place>> quick(String query, LatLng bias, int zoom) {
+    return geocoder.search(query, bias, zoom).handle((v, e) -> {
+      if (e != null) LOG.info("Quick search failed: " + rootCause(e));
+      return e == null ? v : null;
     });
   }
 
@@ -108,11 +121,13 @@ public final class PlaceSearch {
       if (bias == null) return CompletableFuture.completedFuture(List.of());
       found = nearby.find(match.category(), bias);
     } else {
-      // "atm in ameerpet": find Ameerpet first, then ATMs around it.
+      // "atm in ameerpet": find Ameerpet first, then ATMs around it. Written place first
+      // ("kazipet railway station"), only when those words name a town or an area, so a name like
+      // "Mahatma Gandhi Bus Station" isn't read as bus stations near some Mahatma Gandhi.
       found =
           geocoder
               .search(match.near(), bias, zoom)
-              .thenCompose(list -> list.isEmpty()
+              .thenCompose(list -> list.isEmpty() || (match.placeFirst() && list.get(0).kind() != Place.Kind.CITY)
                   ? CompletableFuture.completedFuture(List.<Place>of())
                   : nearby.find(match.category(), list.get(0).position()));
     }

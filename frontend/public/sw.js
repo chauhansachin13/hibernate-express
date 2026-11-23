@@ -88,11 +88,57 @@ async function trim(cache) {
   }
 }
 
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
+// The screen-off alarm. Phones pause web pages when the screen locks; the Java server keeps the
+// trip going and, when the alarm is due and it hasn't heard from the page, sends it as a push
+// (again every 30 s until answered). If the app is open on screen, it rings by itself instead.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = {};
+  }
+  if (data.type !== 'alarm') return;
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      if (windows.some((c) => c.visibilityState === 'visible')) {
+        windows.forEach((c) => c.postMessage({ type: 'hx-push-alarm', reason: data.reason }));
+        return;
+      }
+      await self.registration.showNotification(data.title || 'Wake up! Your stop is coming up', {
+        body: data.body || '',
+        tag: 'hx-alarm',
+        renotify: true,
+        requireInteraction: true,
+        silent: false,
+        vibrate: [900, 300, 900, 300, 900, 300, 1400],
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        timestamp: Date.now(),
+        data: { tripId: data.tripId, api: data.api || self.location.origin },
+        actions: [
+          { action: 'awake', title: "I'm awake ✅" },
+          { action: 'snooze', title: 'Snooze 2 min 😴' },
+        ],
+      });
+    })(),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data = event.notification.data || {};
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      // Buttons on the screen-off alarm answer the server directly: no need to open the app.
+      if ((event.action === 'awake' || event.action === 'snooze') && data.tripId) {
+        const action = event.action === 'awake' ? 'ack' : 'snooze';
+        await fetch(`${data.api}/api/trips/${encodeURIComponent(data.tripId)}/${action}`, { method: 'POST' }).catch(() => undefined);
+        if (event.action === 'awake') windows.forEach((c) => c.postMessage({ type: 'hx-stop-alarm' }));
+        return;
+      }
       if (event.action === 'stop') windows.forEach((client) => client.postMessage({ type: 'hx-stop-alarm' }));
       const client = windows.find((c) => 'focus' in c);
       if (client) return client.focus();

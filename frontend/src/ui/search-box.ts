@@ -1,4 +1,4 @@
-import { api, ApiError, type Place, type SearchResult } from '../api';
+import { api, ApiError, wantsPhoton, type Place, type SearchResult } from '../api';
 import { formatDistance } from '../core/format';
 import { haversine, type LatLng } from '../core/geo';
 import { stagger } from './fx';
@@ -19,10 +19,11 @@ export interface SearchBoxOptions {
   onOpenChange?: (open: boolean) => void;
 }
 
-type Row = { type: 'place'; place: Place } | { type: 'more' };
+type Row = { type: 'place'; place: Place } | { type: 'more' } | { type: 'google' } | { type: 'paste' };
 
 const MIN_CHARS = 2;
 const WORD = /[\p{L}\p{N}]/u;
+const LINK = /https?:\/\/|maps\.app\.goo\.gl|goo\.gl\/maps/i;
 
 /**
  * One search box for everything, through the Java backend: place names, addresses, villages,
@@ -65,6 +66,14 @@ export class SearchBox {
     this.o.clear.hidden = text.length === 0;
   }
 
+  /** Searches for text from elsewhere (a place shared from another app), thoroughly. */
+  searchFor(text: string): void {
+    const q = text.trim();
+    if (q.length < MIN_CHARS) return;
+    this.setValue(q);
+    void this.run(q, true);
+  }
+
   private schedule(explicit: boolean): void {
     window.clearTimeout(this.timer);
     const q = this.o.input.value.trim();
@@ -90,7 +99,9 @@ export class SearchBox {
     if (explicit && moreRow) moreRow.classList.add('is-loading');
     else this.showLoading();
     try {
-      const result = await api.search(q, this.o.getBias(), explicit, ctrl.signal);
+      const result = await api.search(q, this.o.getBias(), explicit, ctrl.signal, (first) => {
+        if (!ctrl.signal.aborted) this.render(first, q, explicit, true);
+      });
       if (ctrl.signal.aborted) return;
       this.cache.set(key, result);
       this.render(result, q, explicit);
@@ -148,24 +159,37 @@ export class SearchBox {
     this.highlightActive();
   }
 
-  private render(result: SearchResult, q: string, explicit: boolean): void {
+  private render(result: SearchResult, q: string, explicit: boolean, partial = false): void {
     const places = result.places;
+    // A pasted or shared map link that names one spot: that's the stop, no need to pick it.
+    if (!partial && LINK.test(q) && places.length === 1) {
+      this.rows = [{ type: 'place', place: places[0] }];
+      this.choose(0);
+      return;
+    }
     this.rows = places.map((place) => ({ type: 'place', place }));
     const items: HTMLElement[] = places.map((place, i) => this.option(place, q, i));
     if (result.more) {
       this.rows.push({ type: 'more' });
       items.push(this.moreRow(this.rows.length - 1, q));
     }
+    if (wantsPhoton(q)) {
+      // Every place Google Maps knows is one share away.
+      this.rows.push({ type: 'google' });
+      items.push(this.actionRow(this.rows.length - 1, 'i-share', 'Not here? Find it on Google Maps', 'Then Share → Copy link, and paste it here'));
+      this.rows.push({ type: 'paste' });
+      items.push(this.actionRow(this.rows.length - 1, 'i-link', 'Paste a Google Maps link', 'Any place, shop or house Google Maps knows'));
+    }
     this.active = places.length ? 0 : -1;
     this.o.list.replaceChildren(...items);
-    stagger(this.o.list);
+    if (!partial) stagger(this.o.list);
     let status = '';
     if (!places.length) {
       status =
         result.message ??
         (explicit
-          ? `No places found for “${q}”. Try a nearby landmark or the village name, or tap the map.`
-          : `No quick matches for “${q}” — search more places below, or tap the map.`);
+          ? `No places found for “${q}” in the open map data. Find it on Google Maps below, or tap the map.`
+          : `No quick matches for “${q}” — search more places, or find it on Google Maps below.`);
     }
     this.o.status.textContent = status;
     this.open();
@@ -206,6 +230,42 @@ export class SearchBox {
     }
     li.addEventListener('click', () => this.choose(index));
     return li;
+  }
+
+  private actionRow(index: number, iconId: string, title: string, meta: string): HTMLLIElement {
+    const li = document.createElement('li');
+    li.id = `hx-result-${index}`;
+    li.className = 'search-option search-action';
+    li.setAttribute('role', 'option');
+    li.innerHTML = `<span class="kind">${icon(iconId)}</span><span class="search-text"><strong></strong><span class="search-meta"></span></span>`;
+    li.querySelector('strong')!.textContent = title;
+    li.querySelector('.search-meta')!.textContent = meta;
+    li.addEventListener('click', () => this.choose(index));
+    return li;
+  }
+
+  /** Opens the same search in Google Maps; the place comes back as a shared or pasted link. */
+  private openGoogleMaps(): void {
+    const q = this.o.input.value.trim();
+    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`, '_blank', 'noopener');
+    this.o.status.textContent = 'In Google Maps: open the place, tap Share → Copy link, then come back and tap “Paste a Google Maps link”.';
+  }
+
+  private async pasteLink(): Promise<void> {
+    let text = '';
+    try {
+      text = (await navigator.clipboard.readText()).trim();
+    } catch {
+      text = '';
+    }
+    if (!LINK.test(text) && !/-?\d{1,2}\.\d+\s*,\s*-?\d{1,3}\.\d+/.test(text)) {
+      this.o.status.textContent = text
+        ? "That isn't a map link. In Google Maps tap Share → Copy link, then try again."
+        : 'Copy the link in Google Maps (Share → Copy link), then tap here — or long-press the search box and paste.';
+      this.o.input.focus();
+      return;
+    }
+    this.searchFor(text);
   }
 
   private moreRow(index: number, q: string): HTMLLIElement {
@@ -274,6 +334,14 @@ export class SearchBox {
     if (!row) return;
     if (row.type === 'more') {
       this.schedule(true);
+      return;
+    }
+    if (row.type === 'google') {
+      this.openGoogleMaps();
+      return;
+    }
+    if (row.type === 'paste') {
+      void this.pasteLink();
       return;
     }
     this.setValue(row.place.name);

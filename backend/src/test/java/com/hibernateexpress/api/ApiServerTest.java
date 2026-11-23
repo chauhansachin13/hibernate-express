@@ -17,8 +17,16 @@ import com.hibernateexpress.route.RouteLine;
 import com.hibernateexpress.sim.AccuracySimulation;
 import com.hibernateexpress.trip.RouteData;
 import com.hibernateexpress.trip.RouteProvider;
+import com.hibernateexpress.push.WebPush;
+import com.hibernateexpress.push.WebPushTest;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Flow;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -262,6 +270,164 @@ class ApiServerTest {
     assertEquals("distance", ring);
     assertTrue(ringRemaining <= 2000 && ringRemaining > 1800, "rang at " + ringRemaining);
     assertTrue(routeVersion >= 1);
+  }
+
+  @Test
+  void ringsAPausedPhoneByPushUntilItAnswers() throws Exception {
+    List<HttpRequest> sent = new CopyOnWriteArrayList<>();
+    ApiServer pushing = new ApiServer(
+        new InetSocketAddress("127.0.0.1", 0),
+        new Services(ROUTER, GEOCODER, clock::get),
+        null,
+        "*",
+        WebPush.generate(ApiServer.PUSH_SUBJECT),
+        request -> {
+          sent.add(request);
+          return CompletableFuture.completedFuture(201);
+        },
+        null);
+    pushing.start();
+    String main = base;
+    base = "http://127.0.0.1:" + pushing.port();
+    try {
+      assertEquals(87, ((String) call("GET", "/api/push/key", null).json().get("publicKey")).length());
+
+      LatLng origin = Geo.destinationPoint(DEST, 200, 2600);
+      Map<String, Object> body = new LinkedHashMap<>();
+      body.put("destination", destination());
+      body.put("settings", settings(2000, 0));
+      body.put("origin", Map.of("lat", origin.lat(), "lng", origin.lng()));
+      String id = (String) call("POST", "/api/trips", body).json().get("tripId");
+      Map<String, Object> subscription = Map.of(
+          "endpoint", "https://fcm.googleapis.com/fcm/send/test-phone",
+          "keys", Map.of("p256dh", WebPushTest.UA_PUBLIC, "auth", WebPushTest.AUTH),
+          "apiBase", "https://api.example");
+      assertEquals(true, call("POST", "/api/trips/" + id + "/push", subscription).json().get("ok"));
+      assertEquals(400, call("POST", "/api/trips/" + id + "/push", Map.of("endpoint", "https://evil.example/x")).status());
+
+      // The phone reports the bus 1.9 km out: the 2 km alarm rings on the phone, which is awake.
+      RouteLine road = new RouteLine(ROUTER.route(origin, DEST).join().points());
+      for (double along : new double[] {0, 350, 700}) {
+        clock.addAndGet(20_000);
+        LatLng p = road.pointAt(along);
+        Map<String, Object> fix = Map.of("lat", p.lat(), "lng", p.lng(), "accuracy", 8, "speed", 15, "timestamp", clock.get());
+        call("POST", "/api/trips/" + id + "/fixes", Map.of("sentAt", clock.get(), "fixes", List.of(fix)));
+      }
+      pushing.pushTick();
+      assertEquals(0, sent.size(), "no push while the phone itself is calling");
+
+      // Then the screen locks and the page is paused: the server sends the alarm.
+      clock.addAndGet(ApiServer.PHONE_QUIET_MS + 1000);
+      pushing.pushTick();
+      assertEquals(1, sent.size());
+      HttpRequest push = sent.get(0);
+      assertEquals("https://fcm.googleapis.com/fcm/send/test-phone", push.uri().toString());
+      assertEquals("aes128gcm", push.headers().firstValue("Content-Encoding").orElse(""));
+      assertTrue(push.headers().firstValue("Authorization").orElse("").startsWith("vapid t="));
+      KeyPair phone = WebPush.keyPair(WebPush.b64d(WebPushTest.UA_PUBLIC), WebPush.b64d(WebPushTest.UA_PRIVATE));
+      Map<String, Object> message = Json.object(Json.parse(
+          new String(WebPushTest.decrypt(bodyOf(push), phone, WebPush.b64d(WebPushTest.AUTH)), StandardCharsets.UTF_8)));
+      assertEquals("alarm", message.get("type"));
+      assertEquals(id, message.get("tripId"));
+      assertEquals("distance", message.get("reason"));
+      assertEquals("https://api.example", message.get("api"));
+      assertTrue(((String) message.get("title")).contains("Wake up"), message.toString());
+
+      // Like an alarm clock: again after 30 s, not before.
+      pushing.pushTick();
+      assertEquals(1, sent.size());
+      clock.addAndGet(31_000);
+      pushing.pushTick();
+      assertEquals(2, sent.size());
+
+      // "I'm awake" (from the notification) stops it.
+      call("POST", "/api/trips/" + id + "/ack", null);
+      clock.addAndGet(ApiServer.PHONE_QUIET_MS + 31_000);
+      pushing.pushTick();
+      assertEquals(2, sent.size());
+    } finally {
+      base = main;
+      pushing.stop();
+    }
+  }
+
+  @Test
+  void screenLockedLongBeforeTheStopStillGetsTheAlarmOnTime() throws Exception {
+    List<Long> pushedAt = new CopyOnWriteArrayList<>();
+    ApiServer pushing = new ApiServer(
+        new InetSocketAddress("127.0.0.1", 0), new Services(ROUTER, GEOCODER, clock::get), null, "*",
+        WebPush.generate(ApiServer.PUSH_SUBJECT),
+        request -> {
+          pushedAt.add(clock.get());
+          return CompletableFuture.completedFuture(201);
+        },
+        null);
+    pushing.start();
+    String main = base;
+    base = "http://127.0.0.1:" + pushing.port();
+    try {
+      // 8 km out, 2 km alarm, the bus at a steady 15 m/s (54 km/h).
+      LatLng origin = Geo.destinationPoint(DEST, 200, 8000);
+      Map<String, Object> body = new LinkedHashMap<>();
+      body.put("destination", destination());
+      body.put("settings", settings(2000, 0));
+      body.put("origin", Map.of("lat", origin.lat(), "lng", origin.lng()));
+      String id = (String) call("POST", "/api/trips", body).json().get("tripId");
+      call("POST", "/api/trips/" + id + "/push", Map.of(
+          "endpoint", "https://fcm.googleapis.com/fcm/send/test-phone",
+          "keys", Map.of("p256dh", WebPushTest.UA_PUBLIC, "auth", WebPushTest.AUTH)));
+      RouteLine road = new RouteLine(ROUTER.route(origin, DEST).join().points());
+      long start = clock.get();
+      // Two minutes of GPS from the awake phone, then the screen locks 6.2 km from the stop.
+      for (int t = 0; t <= 120; t += 2) {
+        clock.set(start + t * 1000L);
+        LatLng p = road.pointAt(15.0 * t);
+        Map<String, Object> fix = Map.of("lat", p.lat(), "lng", p.lng(), "accuracy", 8, "speed", 15, "timestamp", clock.get());
+        call("POST", "/api/trips/" + id + "/fixes", Map.of("sentAt", clock.get(), "fixes", List.of(fix)));
+      }
+      // The bus drives on; only the server's own 2-second check runs.
+      for (int t = 122; t <= 600 && pushedAt.isEmpty(); t += 2) {
+        clock.set(start + t * 1000L);
+        pushing.pushTick();
+      }
+      assertEquals(1, pushedAt.size(), "pushed once");
+      double trulyLeft = road.length() - 15.0 * (pushedAt.get(0) - start) / 1000.0;
+      // Never late, and not absurdly early: counting on without GPS leans early on purpose.
+      assertTrue(trulyLeft >= 2000 && trulyLeft <= 2900, "rang with " + trulyLeft + " m truly left");
+    } finally {
+      base = main;
+      pushing.stop();
+    }
+  }
+
+  static byte[] bodyOf(HttpRequest request) {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    CompletableFuture<Void> done = new CompletableFuture<>();
+    request.bodyPublisher().orElseThrow().subscribe(new Flow.Subscriber<ByteBuffer>() {
+      @Override
+      public void onSubscribe(Flow.Subscription s) {
+        s.request(Long.MAX_VALUE);
+      }
+
+      @Override
+      public void onNext(ByteBuffer b) {
+        byte[] bytes = new byte[b.remaining()];
+        b.get(bytes);
+        out.writeBytes(bytes);
+      }
+
+      @Override
+      public void onError(Throwable t) {
+        done.completeExceptionally(t);
+      }
+
+      @Override
+      public void onComplete() {
+        done.complete(null);
+      }
+    });
+    done.join();
+    return out.toByteArray();
   }
 
   @Test

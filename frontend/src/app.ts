@@ -25,6 +25,7 @@ import {
   ScreenWakeLock,
 } from './services/device';
 import { getCurrentFix, LocationError } from './services/location';
+import { enableScreenOffAlarm, isIos, type ScreenOffAlarm } from './services/push';
 import { TripClient, type TripState } from './trip-client';
 import { confetti, haptic, installRipples, prefersReducedMotion, revealOnScroll, stagger, tweenNumber, typewriter } from './ui/fx';
 import { icon, kindIcon } from './ui/icons';
@@ -59,6 +60,7 @@ interface ActiveTrip {
   ringing: AlarmReason | null;
   celebrated: boolean;
   bgNotified: boolean;
+  batteryWarned?: boolean;
   joke: string;
 }
 
@@ -177,6 +179,12 @@ export class App {
   private nightMode = false;
   private installPrompt: InstallPromptEvent | null = null;
   private toastTimer = 0;
+  /** The notification permission question asked when a trip starts. */
+  private notifyAsk: Promise<unknown> = Promise.resolve();
+  /** Whether the alarm reaches this phone with the screen off (push from the server). */
+  private screenOff: ScreenOffAlarm | null = null;
+  /** Battery, where the browser tells (Android Chrome): a flat phone rings no alarm. */
+  private battery: { level: number; charging: boolean } | null = null;
   private renderedDestKey = '';
   private searchFocused = false;
   private searchPanelOpen = false;
@@ -218,6 +226,63 @@ export class App {
     if (!introShown) window.setTimeout(() => this.revealSheet(), 180);
     this.checkResume();
     void this.autoLocate();
+    this.takeSharedPlace();
+    this.watchBattery();
+  }
+
+  private watchBattery(): void {
+    type Battery = EventTarget & { level: number; charging: boolean };
+    const nav = navigator as Navigator & { getBattery?: () => Promise<Battery> };
+    nav
+      .getBattery?.()
+      .then((b) => {
+        const update = () => {
+          this.battery = { level: b.level, charging: b.charging };
+          this.renderChecks();
+          const trip = this.trip;
+          if (trip && !trip.demo && !b.charging && b.level < 0.2 && !trip.batteryWarned) {
+            trip.batteryWarned = true;
+            this.toast(`🔋 Battery at ${Math.round(b.level * 100)}% — plug in so the alarm can still ring at your stop.`, 'warn', 8000);
+          }
+        };
+        update();
+        b.addEventListener('levelchange', update);
+        b.addEventListener('chargingchange', update);
+      })
+      .catch(() => undefined);
+  }
+
+  /** Live checks on the ride screen: battery and whether the screen is being kept on. */
+  private renderChecks(): void {
+    const b = this.battery;
+    const battery = el('tipBattery');
+    const low = b !== null && !b.charging && b.level < 0.2;
+    battery.dataset.state = b === null ? '' : low ? 'warn' : 'ok';
+    battery.querySelector('span')!.textContent =
+      b === null
+        ? 'Charger on long rides'
+        : b.charging
+          ? `Charging · ${Math.round(b.level * 100)}%`
+          : low
+            ? `Battery ${Math.round(b.level * 100)}% · plug in!`
+            : `Battery ${Math.round(b.level * 100)}%`;
+    const screen = el('tipScreen');
+    const awake = this.wakeLock.active;
+    screen.dataset.state = awake ? 'ok' : '';
+    screen.querySelector('span')!.textContent = awake ? 'Screen kept on' : 'Night mode saves battery';
+  }
+
+  /** A place shared from Google Maps (Share → Hibernate Express) arrives as ?title=&text=&url=. */
+  private takeSharedPlace(): void {
+    const p = new URLSearchParams(location.search);
+    const shared = ['url', 'text', 'title']
+      .map((k) => p.get(k) ?? '')
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    if (!shared) return;
+    history.replaceState(null, '', location.pathname);
+    this.search.searchFor(shared);
   }
 
   // ------------------------------------------------------------------ sheet
@@ -345,7 +410,7 @@ export class App {
     const open = !this.trip && (this.searchFocused || this.searchPanelOpen);
     if (open === this.app.classList.contains('search-open')) return;
     this.app.classList.toggle('search-open', open);
-    this.sheet.refresh(true);
+    this.sheet.setHidden(open);
   }
 
   private renderSettings(): void {
@@ -779,7 +844,9 @@ export class App {
     // These need the user's tap, so they run before anything asynchronous.
     this.alarm.unlock(this.settings.sound);
     void this.wakeLock.enable();
-    if (!demo) void requestNotificationPermission();
+    this.screenOff = null;
+    this.renderScreenOffNote();
+    if (!demo) this.notifyAsk = requestNotificationPermission();
     haptic([12, 50, 12]);
     this.launch(el(demo ? 'demoBtn' : 'startBtn'));
     void this.beginTrip(demo, null);
@@ -836,6 +903,7 @@ export class App {
         if (demo || this.trip !== trip) return;
         const data: SavedTrip = { v: 2, tripId, destination, settings, startedAt: trip.startedAt };
         saveJSON(KEYS.trip, data);
+        void this.armScreenOffAlarm(tripId, trip);
       },
     });
     trip.client = client;
@@ -998,9 +1066,11 @@ export class App {
       if (document.visibilityState === 'hidden') {
         if (!trip.demo && !trip.bgNotified) {
           trip.bgNotified = true;
-          void notify('Hibernate Express is still tracking', 'Keep this tab open so we can wake you before your stop.', {
-            tag: 'hx-bg',
-          });
+          const body =
+            this.screenOff === 'on'
+              ? "Screen off is fine — if your phone pauses this page, the server will ring your stop as a notification."
+              : 'Keep this tab open so we can wake you before your stop.';
+          void notify('Hibernate Express is still tracking', body, { tag: 'hx-bg' });
         }
       } else {
         void clearNotifications('hx-bg');
@@ -1032,6 +1102,7 @@ export class App {
 
   private renderRide(trip: ActiveTrip, state: TripState): void {
     const s = state.snapshot;
+    this.renderChecks();
 
     const value = el('remainValue');
     const unit = el('remainUnit');
@@ -1423,6 +1494,33 @@ export class App {
     } catch {
       this.toast(url, 'ok', 8000);
     }
+  }
+
+  /** Signs the trip up for push, so the alarm still arrives if the phone pauses this page. */
+  private async armScreenOffAlarm(tripId: string, trip: ActiveTrip): Promise<void> {
+    await this.notifyAsk.catch(() => undefined);
+    const state = await enableScreenOffAlarm(tripId);
+    if (this.trip !== trip) return;
+    this.screenOff = state;
+    this.renderScreenOffNote();
+  }
+
+  /** Tells the rider whether locking the phone is safe, and what to do if it isn't. */
+  private renderScreenOffNote(): void {
+    const note = el('screenOffNote');
+    const state = this.trip && !this.trip.demo ? this.screenOff : null;
+    note.hidden = state === null;
+    if (state === null) return;
+    note.dataset.state = state;
+    const homeScreenApp = (navigator as Navigator & { standalone?: boolean }).standalone === true;
+    note.textContent =
+      state === 'on'
+        ? '🔒 Screen-off alarm on: lock your phone if you like — the alarm arrives as a notification.'
+        : state === 'needs-permission'
+          ? '🔔 Allow notifications so the alarm reaches you with the screen off. Until then keep the screen on (Night mode).'
+          : isIos() && !homeScreenApp
+            ? '📱 On iPhone: Share → Add to Home Screen to get the alarm with the screen locked. For now keep the screen on.'
+            : '💡 Keep the screen on for the alarm — Night mode saves battery.';
   }
 
   private registerServiceWorker(): void {

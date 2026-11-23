@@ -3,6 +3,7 @@ package com.hibernateexpress.api;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import java.util.function.LongSupplier;
 
 /**
@@ -47,6 +48,16 @@ public final class TripStore {
 
   public int size() {
     return sessions.size();
+  }
+
+  /** Every trip, without counting as the rider looking at it (for the server's own checks). */
+  public void forEach(BiConsumer<String, TripSession> action) {
+    sessions.forEach(action);
+  }
+
+  /** Whether any real (not demo) trip is in progress. */
+  public boolean anyLive() {
+    return sessions.values().stream().anyMatch(s -> !s.isDemo());
   }
 
   /** Drops trips nobody has looked at for a while. */

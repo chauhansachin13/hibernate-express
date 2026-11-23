@@ -9,6 +9,10 @@ import com.hibernateexpress.geo.Geo;
 import com.hibernateexpress.geo.LatLng;
 import com.hibernateexpress.json.Json;
 import com.hibernateexpress.parse.CoordinateParser;
+import com.hibernateexpress.push.PushSender;
+import com.hibernateexpress.push.PushSubscription;
+import com.hibernateexpress.push.WebPush;
+import com.hibernateexpress.trip.AlarmReason;
 import com.hibernateexpress.route.Polyline;
 import com.hibernateexpress.route.RouteLine;
 import com.hibernateexpress.sim.RideSimulator;
@@ -25,9 +29,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.net.URLDecoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -82,9 +91,37 @@ public final class ApiServer {
   private final TripStore trips;
   private final RateLimiter limiter;
   private final String allowedOrigin;
+  private final WebPush webPush;
+  private final PushSender pushSender;
+  private final String keepAwakeUrl;
+  private final HttpClient keepAwakeClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+
+  /** A phone that hasn't called for this long has had its page paused (it calls every second). */
+  static final long PHONE_QUIET_MS = 8_000;
+  /** Who runs this server, for push services (RFC 8292 "sub"); a URL, so no e-mail is shared. */
+  public static final String PUSH_SUBJECT = "https://hibernate-express.netlify.app";
 
   public ApiServer(InetSocketAddress address, Services services, Path staticRoot, String allowedOrigin)
       throws IOException {
+    this(address, services, staticRoot, allowedOrigin, WebPush.generate(PUSH_SUBJECT), PushSender.jdk(), null);
+  }
+
+  /**
+   * @param keepAwakeUrl this server's public address: while trips are running it is called every
+   *     10 minutes, so a host that sleeps idle servers keeps this one awake for the alarm
+   */
+  public ApiServer(
+      InetSocketAddress address,
+      Services services,
+      Path staticRoot,
+      String allowedOrigin,
+      WebPush webPush,
+      PushSender pushSender,
+      String keepAwakeUrl)
+      throws IOException {
+    this.webPush = webPush;
+    this.pushSender = pushSender;
+    this.keepAwakeUrl = keepAwakeUrl == null || keepAwakeUrl.isBlank() ? null : keepAwakeUrl.replaceAll("/+$", "");
     this.services = services;
     this.placeSearch = new PlaceSearch(services.geocoder(), services.nearby(), services.links());
     this.allowedOrigin = allowedOrigin == null || allowedOrigin.isBlank() ? "*" : allowedOrigin;
@@ -109,6 +146,80 @@ public final class ApiServer {
       trips.purge();
       limiter.purge();
     }, 5, 5, TimeUnit.MINUTES);
+    // A task that throws is never run again, so these catch everything.
+    janitor.scheduleAtFixedRate(() -> {
+      try {
+        pushTick();
+      } catch (RuntimeException e) {
+        LOG.log(Level.WARNING, "Push check failed", e);
+      }
+    }, 2, 2, TimeUnit.SECONDS);
+    if (keepAwakeUrl != null) {
+      janitor.scheduleAtFixedRate(() -> {
+        try {
+          keepAwake();
+        } catch (RuntimeException e) {
+          LOG.log(Level.INFO, "Keep-awake call failed", e);
+        }
+      }, 10, 10, TimeUnit.MINUTES);
+    }
+  }
+
+  // ------------------------------------------------------ the alarm with the screen off
+
+  /**
+   * Phones pause web pages when the screen locks. The server keeps each trip going (counting on
+   * from the last GPS fix at the bus's pace, leaning early), and when an alarm is due on a trip
+   * whose phone has gone quiet, sends it as a push notification — again every 30 s until answered.
+   */
+  void pushTick() {
+    long wall = services.wallClock().getAsLong();
+    trips.forEach((id, session) -> {
+      PushSubscription sub = session.push();
+      if (sub == null || session.isDemo() || wall - session.lastSeen() < PHONE_QUIET_MS) return;
+      TripSnapshot snap = session.refresh(wall);
+      if (!session.pushDue(snap.ringing(), wall)) return;
+      byte[] message = Json.stringify(alarmMessage(id, session, snap, sub)).getBytes(StandardCharsets.UTF_8);
+      pushSender
+          .send(webPush.request(sub, message, 120, wall / 1000))
+          .thenAccept(status -> {
+            if (status == 404 || status == 410) session.dropPush(sub);
+            else if (status >= 400) LOG.info("Push service answered " + status);
+          })
+          .exceptionally(e -> {
+            LOG.info("Push failed: " + e);
+            return null;
+          });
+    });
+  }
+
+  static Map<String, Object> alarmMessage(String id, TripSession session, TripSnapshot snap, PushSubscription sub) {
+    AlarmReason reason = snap.ringing();
+    String stop = session.destination().name();
+    boolean arrived = reason == AlarmReason.ARRIVAL;
+    Map<String, Object> m = new LinkedHashMap<>();
+    m.put("type", "alarm");
+    m.put("tripId", id);
+    m.put("reason", reason.json());
+    m.put("title", arrived ? "📍 You've arrived!" : "⏰ Wake up! Your stop is coming up");
+    m.put("body", arrived
+        ? stop + " — grab your bag, it's time to get off."
+        : distanceText(snap.remaining()) + " to " + stop + (snap.gpsLost() ? " (estimated: your phone's GPS is paused)" : ""));
+    if (sub.apiBase() != null) m.put("api", sub.apiBase());
+    return m;
+  }
+
+  static String distanceText(double metres) {
+    if (Double.isNaN(metres)) return "Almost there";
+    if (metres < 950) return Math.max(10, Math.round(metres / 10.0) * 10) + " m";
+    return String.format(Locale.ROOT, metres < 9_950 ? "%.1f km" : "%.0f km", metres / 1000.0);
+  }
+
+  /** Keeps a host that sleeps idle servers from sleeping while a trip may still need its alarm. */
+  private void keepAwake() {
+    if (!trips.anyLive()) return;
+    HttpRequest ping = HttpRequest.newBuilder(URI.create(keepAwakeUrl + "/api/health")).timeout(Duration.ofSeconds(20)).GET().build();
+    keepAwakeClient.sendAsync(ping, HttpResponse.BodyHandlers.discarding()).exceptionally(e -> null);
   }
 
   public void stop() {
@@ -175,6 +286,12 @@ public final class ApiServer {
         requireMethod(method, "GET");
         return health();
       }
+      case "push" -> {
+        // GET /api/push/key: the key phones subscribe with, for the screen-off alarm.
+        requireMethod(method, "GET");
+        if (parts.length != 2 || !parts[1].equals("key")) throw ApiError.notFound("Unknown endpoint");
+        return Map.of("publicKey", webPush.publicKey());
+      }
       case "search" -> {
         limit(ip);
         if (method.equals("POST")) return searchWithPhoneResults(Json.object(readJson(ex)));
@@ -235,6 +352,18 @@ public final class ApiServer {
             session.engine().snooze(session.now(wall));
           }
           return SnapshotJson.of(session, session.refresh(wall), knownRoute, wall);
+        }
+        case "push" -> {
+          // The phone's push subscription, so the alarm still arrives if its page gets paused.
+          PushSubscription sub;
+          try {
+            sub = PushSubscription.parse(Json.object(readJson(ex)));
+          } catch (IllegalArgumentException bad) {
+            throw ApiError.badRequest(bad.getMessage());
+          }
+          if (session.isDemo()) return Map.of("ok", false);
+          session.setPush(sub);
+          return Map.of("ok", true);
         }
         default -> throw ApiError.notFound("Unknown trip action");
       }

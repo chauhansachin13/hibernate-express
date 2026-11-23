@@ -1,7 +1,9 @@
 package com.hibernateexpress.api;
 
 import com.hibernateexpress.external.Place;
+import com.hibernateexpress.push.PushSubscription;
 import com.hibernateexpress.sim.RideSimulator;
+import com.hibernateexpress.trip.AlarmReason;
 import com.hibernateexpress.trip.TripEngine;
 import com.hibernateexpress.trip.TripSnapshot;
 
@@ -54,6 +56,52 @@ public final class TripSession {
 
   void touch(long wall) {
     lastSeen = wall;
+  }
+
+  // ------------------------------------------------- push: the alarm with the screen off
+
+  /** Repeat an unanswered alarm this often, this many times, like an alarm clock. */
+  static final long PUSH_REPEAT_MS = 30_000;
+  static final int MAX_PUSHES = 8;
+
+  private volatile PushSubscription push;
+  private AlarmReason pushedFor;
+  private int pushCount;
+  private long lastPushAt;
+
+  public PushSubscription push() {
+    return push;
+  }
+
+  public void setPush(PushSubscription subscription) {
+    push = subscription;
+  }
+
+  /** The push service says the subscription is gone (404/410): stop trying it. */
+  public void dropPush(PushSubscription subscription) {
+    if (push == subscription) push = null;
+  }
+
+  /**
+   * Whether to send the alarm as a push now: a new alarm at once, the same one again every 30 s
+   * until it is answered (eight times at most). Answering ("I'm awake") or a snooze resets it.
+   */
+  synchronized boolean pushDue(AlarmReason ringing, long wall) {
+    if (ringing == null) {
+      pushedFor = null;
+      pushCount = 0;
+      return false;
+    }
+    if (ringing != pushedFor) {
+      pushedFor = ringing;
+      pushCount = 1;
+      lastPushAt = wall;
+      return true;
+    }
+    if (pushCount >= MAX_PUSHES || wall - lastPushAt < PUSH_REPEAT_MS) return false;
+    pushCount++;
+    lastPushAt = wall;
+    return true;
   }
 
   /** Engine time matching {@code wall}: the wall clock, or the simulated clock for demo rides. */

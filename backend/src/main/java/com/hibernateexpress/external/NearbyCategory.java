@@ -19,8 +19,20 @@ import java.util.regex.Pattern;
  */
 public record NearbyCategory(String label, Place.Kind kind, int radiusKm, List<String> tags, Pattern names) {
 
-  /** A category, plus the place it should be near ("" = near you). */
-  public record Match(NearbyCategory category, String near) {}
+  /**
+   * A category, plus the place it should be near ("" = near you). {@code placeFirst}: written the
+   * Indian way, place first ("kazipet railway station"), where those words might also just be a
+   * name ("Mahatma Gandhi Bus Station"), so the search checks they name a town or an area.
+   */
+  public record Match(NearbyCategory category, String near, boolean placeFirst) {
+    public Match(NearbyCategory category, String near) {
+      this(category, near, false);
+    }
+  }
+
+  /** Transit stops people write after the place: "kazipet railway station", "hanamkonda bus stand". */
+  private static final List<String> PLACE_FIRST =
+      List.of("railway station", "train station", "rly station", "railway stn", "bus stand", "bus station", "bus depot", "metro station");
 
   private static final Map<String, NearbyCategory> PHRASES = new LinkedHashMap<>();
   /** Longest phrases first, so "bus stop" wins over "bus". */
@@ -126,6 +138,12 @@ public record NearbyCategory(String label, Place.Kind kind, int radiusKm, List<S
       if (!q.startsWith(phrase + " ")) continue;
       var m = CONNECTOR.matcher(q.substring(phrase.length() + 1));
       if (m.matches() && !m.group(1).isBlank()) return new Match(PHRASES.get(phrase), m.group(1).trim());
+    }
+    for (String phrase : PLACE_FIRST) {
+      NearbyCategory category = PHRASES.get(phrase);
+      if (category == null || !q.endsWith(" " + phrase)) continue;
+      String place = q.substring(0, q.length() - phrase.length() - 1).trim();
+      if (!place.isEmpty()) return new Match(category, place, true);
     }
     return null;
   }

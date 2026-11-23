@@ -219,15 +219,16 @@
                 </div>
 
                 <p class="ride-status" id="rideStatus" data-tone="info">Getting your location…</p>
+                <p class="screen-off-note" id="screenOffNote" role="status" hidden></p>
 
                 <div class="ride-actions">
                   <button id="nightBtn" class="btn btn-soft" type="button"><svg class="i"><use href="#i-moon" /></svg>Night mode</button>
                   <button id="endBtn" class="btn btn-danger" type="button"><svg class="i"><use href="#i-stop" /></svg>End trip</button>
                 </div>
                 <ul class="ride-tips">
-                  <li><svg class="i"><use href="#i-volume" /></svg>Media volume up</li>
-                  <li><svg class="i"><use href="#i-battery" /></svg>Charger on long rides</li>
-                  <li><svg class="i"><use href="#i-moon" /></svg>Night mode saves battery</li>
+                  <li><svg class="i"><use href="#i-volume" /></svg><span>Media volume up</span></li>
+                  <li id="tipBattery"><svg class="i"><use href="#i-battery" /></svg><span>Charger on long rides</span></li>
+                  <li id="tipScreen"><svg class="i"><use href="#i-moon" /></svg><span>Night mode saves battery</span></li>
                 </ul>
               </div>
             </div>
@@ -374,7 +375,7 @@
               </article>
               <article class="about-card faq reveal">
                 <h3>Questions</h3>
-                <details><summary>Does it work with the screen off?<svg class="i"><use href="#i-chevron" /></svg></summary><p>Phones pause websites when locked, so during a trip the app keeps your screen awake. Night mode turns it almost black to save battery.</p></details>
+                <details><summary>Does it work with the screen off?<svg class="i"><use href="#i-chevron" /></svg></summary><p>Yes, with notifications allowed. Phones pause websites when locked, so the Java server keeps following your trip and sends the alarm as a notification, repeating every 30 seconds until you tap “I'm awake”. Without GPS it counts on at your bus's pace and leans early. On iPhone this needs the app on your Home Screen. For the loudest alarm keep the screen on: Night mode turns it almost black to save battery.</p></details>
                 <details><summary>Does it need internet?<svg class="i"><use href="#i-chevron" /></svg></summary><p>Yes to start a trip and to follow it on the server. In dead zones your phone keeps its own estimate and can still ring.</p></details>
                 <details><summary>Is my location shared?<svg class="i"><use href="#i-chevron" /></svg></summary><p>Only with the Hibernate Express server for the length of your trip, to follow it on the road route. No account, and trips are deleted when they end.</p></details>
                 <details><summary>Can I use it on trains?<svg class="i"><use href="#i-chevron" /></svg></summary><p>Yes — choose Train. It uses the straight-line distance to your station, so the alarm rings a little early.</p></details>

@@ -245,16 +245,10 @@ a {
   filter: invert(0) hue-rotate(0deg) brightness(1) contrast(1) saturate(0.95);
 }
 
+/* Follows the bottom sheet frame by frame (sheet.ts sets --sheet-visible on it). */
 .leaflet-bottom {
   transform: translate3d(0, calc(-1 * var(--sheet-visible, 260px)), 0);
-}
-
-.app.sheet-settling .leaflet-bottom {
-  transition: transform 0.55s var(--spring);
-}
-
-.app.sheet-dragging .leaflet-bottom {
-  transition: none;
+  will-change: transform;
 }
 
 .app[data-snap='full'] .leaflet-bottom {
@@ -1004,16 +998,7 @@ path.hx-route-glow {
   gap: 10px;
   transform: translate3d(0, calc(-1 * var(--sheet-visible, 260px) - 14px), 0);
   transition: opacity 0.25s;
-}
-
-.app.sheet-settling .map-fabs {
-  transition:
-    transform 0.55s var(--spring),
-    opacity 0.25s;
-}
-
-.app.sheet-dragging .map-fabs {
-  transition: opacity 0.25s;
+  will-change: transform;
 }
 
 .app[data-snap='full'] .map-fabs,
@@ -1045,6 +1030,11 @@ path.hx-route-glow {
   will-change: transform;
 }
 
+/* While planning, the open sheet stops just below the search box, so its handle stays in reach. */
+.app:not(.is-riding) .sheet {
+  top: calc(var(--safe-top) + 128px);
+}
+
 /* Fills any gap below the sheet while it springs past a snap point. */
 .sheet::after {
   content: '';
@@ -1056,13 +1046,7 @@ path.hx-route-glow {
   background: var(--sheet-bg);
 }
 
-.sheet.settling {
-  transition: transform 0.55s var(--spring);
-}
-
-.app.search-open .sheet {
-  transform: translate3d(0, 102%, 0) !important;
-}
+/* The sheet's position is animated frame by frame in sheet.ts: no CSS transition on transform. */
 
 .sheet-handle {
   flex: none;
@@ -2180,6 +2164,31 @@ path.hx-route-glow {
     border-color 0.4s;
 }
 
+/* Whether locking the phone is safe (push alarm), or what to do instead. */
+.screen-off-note {
+  margin: 10px 0 0;
+  padding: 10px 13px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 14px;
+  color: var(--muted);
+  font-size: 12.8px;
+  font-weight: 600;
+  line-height: 1.45;
+  animation: rise-in 0.5s var(--ease-out) backwards;
+}
+
+.screen-off-note[data-state='on'] {
+  border-style: solid;
+  border-color: rgba(45, 212, 191, 0.32);
+  color: #99f6e4;
+  background: rgba(45, 212, 191, 0.07);
+}
+
+.screen-off-note[data-state='needs-permission'] {
+  border-color: rgba(251, 191, 36, 0.4);
+  color: #fde68a;
+}
+
 .ride-status[data-tone='warn'] {
   border-color: rgba(251, 191, 36, 0.38);
   background: rgba(251, 191, 36, 0.1);
@@ -2219,6 +2228,17 @@ path.hx-route-glow {
   display: flex;
   align-items: center;
   gap: 6px;
+  transition: color 0.3s;
+}
+
+/* Live checks: green when good, amber (and gently pulsing) when it needs you. */
+.ride-tips li[data-state='ok'] {
+  color: #5eead4;
+}
+
+.ride-tips li[data-state='warn'] {
+  color: #fbbf24;
+  animation: nudge-x 1.6s ease-in-out infinite;
 }
 
 /* ------------------------------------------------------------------ intro */

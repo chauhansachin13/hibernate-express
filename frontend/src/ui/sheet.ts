@@ -6,23 +6,44 @@ export interface SheetOptions {
   onChange?: (snap: Snap) => void;
 }
 
-interface Drag {
-  pointerId: number;
+/** Movement (px) before a touch counts as a drag rather than a tap. */
+const SLOP = 6;
+/** Release speed (px/ms) above which a flick moves on to the next snap point. */
+const FLING = 0.4;
+/** Spring stiffness (rad/s), critically damped: settles in about 0.3 s with no bounce. */
+const OMEGA = 24;
+/** Pointer history (ms) used to measure the release speed. */
+const VELOCITY_WINDOW = 90;
+/** How far (px) the sheet can be pulled past its ends, approached ever more slowly. */
+const STRETCH_TOP = 36;
+const STRETCH_BOTTOM = 110;
+
+interface Gesture {
+  kind: 'touch' | 'pointer';
+  id: number;
+  startX: number;
   startY: number;
   startOffset: number;
-  /** True once the pointer has moved far enough to be a drag, not a tap. */
-  active: boolean;
   fromHandle: boolean;
+  /** Started on the content while it scrolls (sheet fully open). */
+  fromScroller: boolean;
+  state: 'pending' | 'drag' | 'ignore';
   samples: { y: number; t: number }[];
 }
 
-const DRAG_SLOP = 8;
+const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** iOS-style rubber band: follows the finger at first, then ever more slowly, never past `limit`. */
+function rubber(over: number, limit: number): number {
+  return limit * (1 - 1 / (over / limit + 1));
+}
 
 /**
- * A draggable bottom sheet like native map apps: three snap points, flick velocity, rubber
- * banding and a springy settle. Drag it by the handle, or by its content while it isn't fully
- * open (when it is, the content scrolls instead). Exposes how much of it is visible as
- * --sheet-visible on the app so floating buttons and map padding follow it.
+ * A bottom sheet that moves like the one in Google Maps: it follows the finger exactly, a flick
+ * moves it on to the next snap point, and it settles with a critically damped spring that starts
+ * at the speed of the release and can be caught mid-flight. Drag it by the handle or by its
+ * content; when it is fully open the content scrolls, and pulling down at the top of the content
+ * hands the gesture back to the sheet. Floating buttons follow it in the same frame.
  */
 export class BottomSheet {
   private readonly sheet: HTMLElement;
@@ -31,10 +52,16 @@ export class BottomSheet {
   private readonly app: HTMLElement;
   private readonly opts: SheetOptions;
   private current: Snap = 'peek';
+  private hidden = false;
+  /** How far (px) the sheet is pushed down from fully open; what is on screen right now. */
   private offset = 0;
-  private drag: Drag | null = null;
+  private height = 0;
+  private gesture: Gesture | null = null;
+  private animation = 0;
+  private renderQueued = false;
   private suppressClick = false;
   private wheelLock = 0;
+  private followers: HTMLElement[] = [];
 
   constructor(sheet: HTMLElement, handle: HTMLElement, body: HTMLElement, app: HTMLElement, opts: SheetOptions) {
     this.sheet = sheet;
@@ -42,10 +69,19 @@ export class BottomSheet {
     this.body = body;
     this.app = app;
     this.opts = opts;
-    sheet.addEventListener('pointerdown', (e) => this.down(e));
-    sheet.addEventListener('pointermove', (e) => this.move(e));
-    sheet.addEventListener('pointerup', (e) => this.up(e));
-    sheet.addEventListener('pointercancel', (e) => this.up(e, true));
+    this.measure();
+    this.offset = this.height;
+
+    // Touch: its own listeners, so a pull-down at the top of scrolled content can take over.
+    sheet.addEventListener('touchstart', (e) => this.touchStart(e), { passive: true });
+    sheet.addEventListener('touchmove', (e) => this.touchMove(e), { passive: false });
+    sheet.addEventListener('touchend', (e) => this.touchEnd(e, false));
+    sheet.addEventListener('touchcancel', (e) => this.touchEnd(e, true));
+    // Mouse and pen.
+    sheet.addEventListener('pointerdown', (e) => this.pointerDown(e));
+    sheet.addEventListener('pointermove', (e) => this.pointerMove(e));
+    sheet.addEventListener('pointerup', (e) => this.pointerUp(e, false));
+    sheet.addEventListener('pointercancel', (e) => this.pointerUp(e, true));
     // A drag that started on a button must not also press it.
     sheet.addEventListener(
       'click',
@@ -65,7 +101,14 @@ export class BottomSheet {
       else return;
       e.preventDefault();
     });
-    window.addEventListener('resize', () => this.setSnap(this.current, false));
+    // The window, or the sheet itself (it is taller during a ride), changed size: re-place it.
+    const resized = new ResizeObserver(() => {
+      const before = this.height;
+      this.measure();
+      if (this.height !== before && !this.gesture) this.setSnap(this.current, false);
+    });
+    resized.observe(app);
+    resized.observe(sheet);
   }
 
   get snap(): Snap {
@@ -74,123 +117,287 @@ export class BottomSheet {
 
   /** Pixels of the sheet currently on screen. */
   get visibleHeight(): number {
-    return Math.max(0, this.sheet.offsetHeight - this.offset);
-  }
-
-  /** Visible height in px for each snap point. */
-  private visible(): Record<Snap, number> {
-    const h = this.app.clientHeight;
-    const max = this.sheet.offsetHeight;
-    const peek = Math.min(max, Math.max(120, Math.round(this.opts.peek())));
-    const half = Math.min(max, Math.max(peek + 60, Math.round(h * 0.58)));
-    return { peek, half, full: max };
+    return Math.max(0, this.height - this.offset);
   }
 
   setSnap(snap: Snap, animate = true): void {
     const was = this.current;
     this.current = snap;
-    const v = this.visible();
-    this.apply(this.sheet.offsetHeight - v[snap], animate);
+    if (!this.gesture) this.measure();
     this.sheet.dataset.snap = snap;
     this.app.dataset.snap = snap;
     this.handle.setAttribute('aria-expanded', String(snap !== 'peek'));
     if (snap !== 'full' && this.body.scrollTop > 0) this.body.scrollTo({ top: 0, behavior: animate ? 'smooth' : 'auto' });
+    if (!this.gesture) this.moveTo(this.restingOffset(), 0, animate);
     if (was !== snap || !animate) this.opts.onChange?.(snap);
   }
 
   /** Re-measures the snap points (e.g. after the content changed) without changing the snap. */
   refresh(animate = true): void {
+    this.measure();
     this.setSnap(this.current, animate);
+  }
+
+  /** Slides the whole sheet off screen (while searching) and back. */
+  setHidden(hidden: boolean): void {
+    if (hidden === this.hidden) return;
+    this.hidden = hidden;
+    this.sheet.classList.toggle('is-hidden', hidden);
+    if (this.gesture) this.endGesture();
+    this.measure();
+    this.moveTo(this.restingOffset(), 0, true);
+  }
+
+  private measure(): void {
+    this.height = this.sheet.offsetHeight;
+    // The map adds its corner controls after the sheet exists, so look them up each time.
+    this.followers = Array.from(this.app.querySelectorAll<HTMLElement>('.map-fabs, .leaflet-bottom'));
+  }
+
+  /** Visible height in px for each snap point. */
+  private visible(): Record<Snap, number> {
+    const h = this.app.clientHeight;
+    const max = this.height;
+    const peek = Math.min(max, Math.max(120, Math.round(this.opts.peek())));
+    const half = Math.min(max, Math.max(peek + 60, Math.round(h * 0.58)));
+    return { peek, half, full: max };
+  }
+
+  private offsetFor(snap: Snap): number {
+    return this.height - this.visible()[snap];
+  }
+
+  private restingOffset(): number {
+    return this.hidden ? this.height + 24 : this.offsetFor(this.current);
   }
 
   private cycle(): void {
     this.setSnap(this.current === 'full' ? 'half' : this.current === 'half' ? 'full' : 'half');
   }
 
-  private apply(offset: number, animate: boolean): void {
-    this.offset = offset;
-    this.sheet.classList.toggle('settling', animate);
-    this.app.classList.toggle('sheet-settling', animate);
-    this.sheet.style.transform = `translate3d(0, ${Math.round(this.offset)}px, 0)`;
-    this.app.style.setProperty('--sheet-visible', `${Math.round(this.visibleHeight)}px`);
+  // ------------------------------------------------------------------ motion
+
+  /** Draws the current offset; called at most once per frame. */
+  private render = (): void => {
+    this.renderQueued = false;
+    const y = this.offset;
+    this.sheet.style.transform = `translate3d(0, ${y.toFixed(2)}px, 0)`;
+    const visible = `${Math.max(0, this.height - y).toFixed(2)}px`;
+    for (const f of this.followers) f.style.setProperty('--sheet-visible', visible);
+  };
+
+  private queueRender(): void {
+    if (this.renderQueued) return;
+    this.renderQueued = true;
+    requestAnimationFrame(this.render);
   }
 
-  private down(e: PointerEvent): void {
-    if (e.button !== 0 || this.drag) return;
-    const fromHandle = this.handle.contains(e.target as Node);
-    // When fully open the content scrolls natively; only the handle drags the sheet.
-    if (!fromHandle && this.current === 'full') return;
-    if (!fromHandle && (e.target as HTMLElement).closest('input, select, textarea, summary')) return;
-    this.drag = {
-      pointerId: e.pointerId,
-      startY: e.clientY,
-      startOffset: this.offset,
-      active: false,
-      fromHandle,
-      samples: [{ y: e.clientY, t: performance.now() }],
-    };
-    if (fromHandle) this.handle.setPointerCapture(e.pointerId);
+  private stopAnimation(): void {
+    if (this.animation) cancelAnimationFrame(this.animation);
+    this.animation = 0;
+    this.sheet.classList.remove('settling');
   }
 
-  private move(e: PointerEvent): void {
-    const d = this.drag;
-    if (!d || e.pointerId !== d.pointerId) return;
-    const dy = e.clientY - d.startY;
-    if (!d.active) {
-      if (Math.abs(dy) < DRAG_SLOP) return;
-      d.active = true;
-      this.sheet.classList.add('dragging');
-      this.app.classList.add('sheet-dragging');
-      if (!d.fromHandle) this.sheet.setPointerCapture(e.pointerId);
-    }
-    const v = this.visible();
-    const h = this.sheet.offsetHeight;
-    const min = h - v.full;
-    const max = h - v.peek;
-    let next = d.startOffset + dy;
-    // Rubber-band past the ends.
-    if (next < min) next = min - (min - next) * 0.22;
-    if (next > max) next = max + (next - max) * 0.35;
-    this.apply(next, false);
-    d.samples.push({ y: e.clientY, t: performance.now() });
-    if (d.samples.length > 6) d.samples.shift();
-  }
-
-  private up(e: PointerEvent, cancelled = false): void {
-    const d = this.drag;
-    if (!d || e.pointerId !== d.pointerId) return;
-    this.drag = null;
-    this.sheet.classList.remove('dragging');
-    this.app.classList.remove('sheet-dragging');
-    for (const el of [this.handle, this.sheet]) if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
-    if (!d.active) {
-      // A tap on the handle opens or closes the sheet; taps on the content pass through.
-      if (d.fromHandle && !cancelled) this.cycle();
+  /**
+   * Springs to `target` starting at `velocity` (px/ms): x(t) = (x0 + (v0 + ωx0)t)·e^(−ωt), the
+   * critically damped solution, so it never bounces and stays smooth when the finger lets go.
+   */
+  private moveTo(target: number, velocity: number, animate: boolean): void {
+    this.stopAnimation();
+    if (this.followers.length < 2) this.measure();
+    const x0 = this.offset - target;
+    if (!animate || reducedMotion() || (Math.abs(x0) < 0.5 && Math.abs(velocity) < 0.02)) {
+      this.offset = target;
+      this.render();
       return;
     }
+    // A flick towards the target faster than ωx0 would overshoot once; cap it there instead.
+    let v0 = velocity * 1000;
+    if (v0 * x0 < 0 && Math.abs(v0) > OMEGA * Math.abs(x0)) v0 = -Math.sign(x0) * OMEGA * Math.abs(x0);
+    const start = performance.now();
+    this.sheet.classList.add('settling');
+    const step = (now: number) => {
+      const t = Math.max(0, now - start) / 1000;
+      const decay = Math.exp(-OMEGA * t);
+      const x = (x0 + (v0 + OMEGA * x0) * t) * decay;
+      const v = (v0 - OMEGA * (v0 + OMEGA * x0) * t) * decay;
+      if (Math.abs(x) < 0.3 && Math.abs(v) < 12) {
+        this.animation = 0;
+        this.sheet.classList.remove('settling');
+        this.offset = target;
+        this.render();
+        return;
+      }
+      this.offset = target + x;
+      this.render();
+      this.animation = requestAnimationFrame(step);
+    };
+    this.animation = requestAnimationFrame(step);
+  }
+
+  // ---------------------------------------------------------------- gestures
+
+  private begin(kind: Gesture['kind'], id: number, x: number, y: number, target: EventTarget | null): void {
+    const el = target instanceof Element ? target : null;
+    if (this.hidden || !el) return;
+    if (el.closest('input, select, textarea, [contenteditable="true"]')) return;
+    const fromHandle = this.handle.contains(el);
+    const fromScroller = !fromHandle && this.current === 'full' && this.body.contains(el);
+    // Catch the sheet where it is if it is still settling.
+    if (this.animation) {
+      this.stopAnimation();
+    }
+    this.measure();
+    this.gesture = {
+      kind,
+      id,
+      startX: x,
+      startY: y,
+      startOffset: this.offset,
+      fromHandle,
+      fromScroller,
+      state: 'pending',
+      samples: [{ y, t: performance.now() }],
+    };
+  }
+
+  /**
+   * Returns true while the gesture moves the sheet (so the caller can block scrolling). `at` is
+   * the event's own timestamp: when the finger moved, even if the page was busy at the time.
+   */
+  private track(x: number, y: number, at: number): boolean {
+    const g = this.gesture;
+    if (!g || g.state === 'ignore') return false;
+    if (g.state === 'pending') {
+      const dx = x - g.startX;
+      const dy = y - g.startY;
+      if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return false;
+      if (Math.abs(dx) > Math.abs(dy)) {
+        g.state = 'ignore'; // a sideways swipe, e.g. across a row of chips
+        return false;
+      }
+      if (g.fromScroller && !(this.body.scrollTop <= 0 && dy > 0)) {
+        g.state = 'ignore'; // the content scrolls; only a pull-down at its top moves the sheet
+        return false;
+      }
+      g.state = 'drag';
+      // Start from here, so the sheet doesn't jump by the slop distance.
+      g.startY = y;
+      g.startOffset = this.offset;
+      g.samples = [{ y, t: at }];
+      this.sheet.classList.add('dragging');
+      this.app.classList.add('sheet-dragging');
+    }
+    const min = this.offsetFor('full');
+    const max = this.offsetFor('peek');
+    let next = g.startOffset + (y - g.startY);
+    if (next < min) next = min - rubber(min - next, STRETCH_TOP);
+    if (next > max) next = max + rubber(next - max, STRETCH_BOTTOM);
+    this.offset = next;
+    this.queueRender();
+    g.samples.push({ y, t: at });
+    while (g.samples.length > 2 && at - g.samples[0].t > VELOCITY_WINDOW) g.samples.shift();
+    return true;
+  }
+
+  private finish(cancelled: boolean, at: number): void {
+    const g = this.gesture;
+    if (!g) return;
+    this.endGesture();
+    if (g.state === 'pending') {
+      // A tap on the handle opens or closes the sheet; taps on the content pass through.
+      if (g.fromHandle && !cancelled) this.cycle();
+      else this.moveTo(this.restingOffset(), 0, true);
+      return;
+    }
+    if (g.state !== 'drag') return;
     this.suppressClick = true;
     window.setTimeout(() => (this.suppressClick = false), 350);
-    const first = d.samples[0];
-    const last = d.samples[d.samples.length - 1];
-    const velocity = last.t > first.t ? (last.y - first.y) / (last.t - first.t) : 0; // px per ms
-    const projected = this.offset + velocity * 240;
-    const v = this.visible();
-    const h = this.sheet.offsetHeight;
-    let best: Snap = this.current;
-    let bestDist = Infinity;
-    for (const s of ['full', 'half', 'peek'] as const) {
-      const dist = Math.abs(h - v[s] - projected);
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = s;
-      }
+    const first = g.samples[0];
+    const last = g.samples[g.samples.length - 1];
+    // Px per ms; a finger that stopped before letting go has no speed.
+    const velocity = at - last.t > 70 || last.t <= first.t ? 0 : (last.y - first.y) / (last.t - first.t);
+    const snap = this.chooseSnap(velocity);
+    const was = this.current;
+    this.current = snap;
+    this.sheet.dataset.snap = snap;
+    this.app.dataset.snap = snap;
+    this.handle.setAttribute('aria-expanded', String(snap !== 'peek'));
+    if (snap !== 'full' && this.body.scrollTop > 0) this.body.scrollTo({ top: 0, behavior: 'smooth' });
+    this.moveTo(this.offsetFor(snap), velocity, true);
+    if (was !== snap) this.opts.onChange?.(snap);
+  }
+
+  /** A flick goes on to the next snap point in its direction; a slow release to the nearest. */
+  private chooseSnap(velocity: number): Snap {
+    const points = (['full', 'half', 'peek'] as const).map((snap) => ({ snap, y: this.offsetFor(snap) }));
+    const y = this.offset;
+    if (Math.abs(velocity) > FLING) {
+      const ahead =
+        velocity < 0
+          ? points.filter((p) => p.y < y - 1).sort((a, b) => b.y - a.y)[0]
+          : points.filter((p) => p.y > y + 1).sort((a, b) => a.y - b.y)[0];
+      if (ahead) return ahead.snap;
     }
-    this.setSnap(best);
+    const projected = y + velocity * 120;
+    return points.reduce((best, p) => (Math.abs(p.y - projected) < Math.abs(best.y - projected) ? p : best)).snap;
+  }
+
+  private endGesture(): void {
+    this.gesture = null;
+    this.sheet.classList.remove('dragging');
+    this.app.classList.remove('sheet-dragging');
+  }
+
+  // --- touch
+
+  private touchStart(e: TouchEvent): void {
+    if (this.gesture || e.touches.length > 1) return;
+    const t = e.changedTouches[0];
+    this.begin('touch', t.identifier, t.clientX, t.clientY, e.target);
+  }
+
+  private findTouch(list: TouchList): Touch | null {
+    const g = this.gesture;
+    if (!g || g.kind !== 'touch') return null;
+    for (let i = 0; i < list.length; i++) if (list[i].identifier === g.id) return list[i];
+    return null;
+  }
+
+  private touchMove(e: TouchEvent): void {
+    const t = this.findTouch(e.changedTouches);
+    if (!t) return;
+    if (this.track(t.clientX, t.clientY, e.timeStamp) && e.cancelable) e.preventDefault();
+  }
+
+  private touchEnd(e: TouchEvent, cancelled: boolean): void {
+    if (this.findTouch(e.changedTouches)) this.finish(cancelled, e.timeStamp);
+  }
+
+  // --- mouse and pen
+
+  private pointerDown(e: PointerEvent): void {
+    if (e.pointerType === 'touch' || e.button !== 0 || this.gesture) return;
+    this.begin('pointer', e.pointerId, e.clientX, e.clientY, e.target);
+    if (this.gesture) this.sheet.setPointerCapture(e.pointerId);
+  }
+
+  private pointerMove(e: PointerEvent): void {
+    const g = this.gesture;
+    if (!g || g.kind !== 'pointer' || e.pointerId !== g.id) return;
+    this.track(e.clientX, e.clientY, e.timeStamp);
+  }
+
+  private pointerUp(e: PointerEvent, cancelled: boolean): void {
+    const g = this.gesture;
+    if (!g || g.kind !== 'pointer' || e.pointerId !== g.id) return;
+    if (this.sheet.hasPointerCapture(e.pointerId)) this.sheet.releasePointerCapture(e.pointerId);
+    this.finish(cancelled, e.timeStamp);
   }
 
   /** Mouse wheel / trackpad: scroll up to open, down to close (content scrolls when full). */
   private wheel(e: WheelEvent): void {
-    if (Math.abs(e.deltaY) < 4) return;
+    if (Math.abs(e.deltaY) < 4 || this.hidden) return;
     const opening = e.deltaY > 0;
     if (this.current === 'full' && (opening || this.body.scrollTop > 0)) return;
     e.preventDefault();

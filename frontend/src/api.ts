@@ -126,6 +126,9 @@ export class ApiError extends Error {
 /** Same origin by default (the Java server also serves this app); override with VITE_API_BASE. */
 const BASE = ((import.meta.env.VITE_API_BASE as string | undefined) ?? '').replace(/\/$/, '');
 
+/** Where the Java server is, as a full address (the service worker needs it for alarm buttons). */
+export const apiOrigin = (): string => BASE || location.origin;
+
 async function request<T>(
   method: string,
   path: string,
@@ -229,7 +232,13 @@ export const api = {
    * and ranks them with near-me places, plus codes and links. If the server needs another place
    * looked up first ("ameerpet" in "atm in ameerpet"), it says so and the phone asks once more.
    */
-  async search(q: string, bias: Bias | null, explicit: boolean, signal?: AbortSignal): Promise<SearchResult> {
+  async search(
+    q: string,
+    bias: Bias | null,
+    explicit: boolean,
+    signal?: AbortSignal,
+    onPartial?: (first: SearchResult) => void,
+  ): Promise<SearchResult> {
     const opts = { signal, timeoutMs: explicit ? 30_000 : 20_000 };
     const base = {
       q,
@@ -246,6 +255,8 @@ export const api = {
     const result = await request<SearchResult>('POST', '/search', { ...base, photon: lookups }, opts);
     const needed = (result.photonNeeded ?? []).filter((n) => !lookups.some((l) => l.q.toLowerCase() === n.toLowerCase())).slice(0, 2);
     if (needed.length === 0) return result;
+    // Show what there is now; the second round only sharpens it.
+    if (result.places.length) onPartial?.(result);
     const more = (await Promise.all(needed.map((n) => photon(n, bias, signal)))).filter((l): l is PhotonLookup => l !== null);
     return more.length ? request<SearchResult>('POST', '/search', { ...base, photon: [...lookups, ...more] }, opts) : result;
   },
@@ -263,6 +274,16 @@ export const api = {
 
   coordinates(text: string) {
     return request<{ ok: boolean; lat?: number; lng?: number; error?: string }>('POST', '/coordinates', { text });
+  },
+
+  /** The server's key for push subscriptions (screen-off alarms). */
+  pushKey() {
+    return request<{ publicKey: string }>('GET', '/push/key');
+  },
+
+  /** Lets the server send this trip's alarms as push notifications if the page gets paused. */
+  subscribePush(tripId: string, subscription: PushSubscriptionJSON) {
+    return request<{ ok: boolean }>('POST', `/trips/${encodeURIComponent(tripId)}/push`, { ...subscription, apiBase: apiOrigin() });
   },
 
   createTrip(body: { destination: Place; settings: TripSettings; demo: boolean; origin?: LatLng | null }) {

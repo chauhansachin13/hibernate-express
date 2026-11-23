@@ -7,6 +7,8 @@ import com.hibernateexpress.external.HttpFetcher;
 import com.hibernateexpress.external.JdkHttpFetcher;
 import com.hibernateexpress.external.LinkResolver;
 import com.hibernateexpress.external.OsrmClient;
+import com.hibernateexpress.push.PushSender;
+import com.hibernateexpress.push.WebPush;
 import com.hibernateexpress.sim.AccuracyReport;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
@@ -67,7 +69,16 @@ public final class Main {
             photon,
             new LinkResolver.Jdk("HibernateExpress/1.0 (bus stop alarm)", clock),
             clock);
-    ApiServer server = new ApiServer(new InetSocketAddress(port), services, staticRoot, System.getenv("HX_ALLOWED_ORIGIN"));
+    // Screen-off alarms: fixed keys from the environment keep phone subscriptions valid across
+    // restarts (without them, phones simply subscribe again to the new key).
+    String vapidPublic = System.getenv("HX_VAPID_PUBLIC");
+    String vapidPrivate = System.getenv("HX_VAPID_PRIVATE");
+    WebPush push = vapidPublic != null && vapidPrivate != null
+        ? WebPush.fromKeys(vapidPublic, vapidPrivate, ApiServer.PUSH_SUBJECT)
+        : WebPush.generate(ApiServer.PUSH_SUBJECT);
+    String publicUrl = System.getenv().getOrDefault("HX_PUBLIC_URL", System.getenv("RENDER_EXTERNAL_URL"));
+    ApiServer server = new ApiServer(
+        new InetSocketAddress(port), services, staticRoot, System.getenv("HX_ALLOWED_ORIGIN"), push, PushSender.jdk(), publicUrl);
     server.start();
     Runtime.getRuntime().addShutdownHook(new Thread(server::stop, "hx-shutdown"));
     System.out.println(

@@ -29,6 +29,7 @@ class SearchTest {
 
   static final LatLng WARANGAL = new LatLng(17.9837, 79.5307);
   static final LatLng AMEERPET = new LatLng(17.4375, 78.4482);
+  static final LatLng KAZIPET = new LatLng(17.9750, 79.5070);
 
   // ------------------------------------------------------------------ plus codes
 
@@ -86,6 +87,9 @@ class SearchTest {
     "metro, Metro station, ''",
     "atm in Ameerpet, ATM, ameerpet",
     "hospital near Kazipet, Hospital, kazipet",
+    "kazipet railway station, Railway station, kazipet",
+    "Hanamkonda bus stand, Bus station, hanamkonda",
+    "Ameerpet metro station, Metro station, ameerpet",
   })
   void understandsNearMeSearches(String query, String label, String near) {
     NearbyCategory.Match m = NearbyCategory.match(query);
@@ -94,8 +98,36 @@ class SearchTest {
     assertEquals(near, m.near());
   }
 
+  @Test
+  void marksTransitStopsWrittenAfterThePlace() {
+    assertTrue(NearbyCategory.match("kazipet railway station").placeFirst());
+    assertTrue(NearbyCategory.match("Hanamkonda bus stand").placeFirst());
+    assertFalse(NearbyCategory.match("bus stand near kazipet").placeFirst());
+    assertFalse(NearbyCategory.match("bus stand").placeFirst());
+  }
+
   @ParameterizedTest
-  @ValueSource(strings = {"Apollo Hospital", "station road", "Hanamkonda bus stand", "NIT Warangal", "kazipet"})
+  @CsvSource({
+    "kazipet jn, kazipet junction",
+    "Kazipet Rly. Stn, Kazipet railway station",
+    "govt hosp hanamkonda, government hospital hanamkonda",
+    "hanamkonda busstand, hanamkonda bus stand",
+    "atm nr ameerpet, atm near ameerpet",
+    "mgbs, mahatma gandhi bus station",
+  })
+  void writesOutIndianShortForms(String typed, String expected) {
+    assertEquals(expected, QueryWords.expand(typed));
+  }
+
+  @Test
+  void leavesFullWordsAlone() {
+    assertNull(QueryWords.expand("NIT Warangal"));
+    assertNull(QueryWords.expand("Kazipet Junction"));
+    assertNull(QueryWords.expand("Jntu college")); // "jn" only as a whole word
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"Apollo Hospital", "station road", "NIT Warangal", "kazipet"})
   void leavesPlaceNamesToTheTextSearch(String query) {
     assertNull(NearbyCategory.match(query));
   }
@@ -254,6 +286,25 @@ class SearchTest {
   }
 
   @Test
+  void findsStationsForShortFormsAndPlaceFirstSearches() {
+    FakeGeocoder geo = new FakeGeocoder();
+    NearbyFinder closest = (c, p) -> done(place("Closest " + c.label(), p.lat() + 0.001, p.lng(), c.label()));
+    PlaceSearch search = new PlaceSearch(geo, closest, LinkResolver.NONE);
+
+    // "kazipet rly stn": also searched written out, and read as railway stations around Kazipet.
+    Place station = search.search("kazipet rly stn", WARANGAL, 13, false).join().places().get(0);
+    assertEquals("Closest Railway station", station.name());
+    assertEquals(KAZIPET.lat() + 0.001, station.lat(), 1e-9);
+    assertTrue(geo.searches.contains("kazipet rly stn"));
+    assertTrue(geo.searches.contains("kazipet railway station"));
+
+    // A name that ends like a stop: "Mahatma Gandhi" is not a town, so no stops "near" it.
+    List<String> names = names(search.search("mahatma gandhi bus station", WARANGAL, 13, false).join().places());
+    assertFalse(names.contains("Closest Bus station"), names.toString());
+    assertTrue(names.contains("mahatma gandhi bus station (photon)"), names.toString());
+  }
+
+  @Test
   void usesThePhonesPhotonResultsWhenPhotonRefusesTheServer() {
     FakeGeocoder geo = new FakeGeocoder();
     geo.failText = true; // the public Photon server refuses this host
@@ -363,6 +414,7 @@ class SearchTest {
       searches.add(query);
       if (failText) return CompletableFuture.failedFuture(new IllegalStateException("Photon is down"));
       return switch (query) {
+        case "kazipet" -> done(new Place("Kazipet", "Telangana", KAZIPET.lat(), KAZIPET.lng(), Place.Kind.CITY, "Town"));
         case "ameerpet" -> done(place("Ameerpet", AMEERPET.lat(), AMEERPET.lng(), "Area"));
         case "Warangal" -> done(place("Warangal", 17.9689, 79.5941, "City"));
         case "Charminar" -> done(place("Charminar", 17.3616, 78.4747, "Monument"));
