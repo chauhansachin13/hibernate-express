@@ -77,11 +77,13 @@ export class BottomSheet {
     sheet.addEventListener('touchmove', (e) => this.touchMove(e), { passive: false });
     sheet.addEventListener('touchend', (e) => this.touchEnd(e, false));
     sheet.addEventListener('touchcancel', (e) => this.touchEnd(e, true));
-    // Mouse and pen.
+    // Mouse and pen. Moves and releases are heard on the whole window: the pointer is only
+    // captured once a drag starts, because a captured press turns its click into a click on the
+    // sheet, and then buttons in the sheet never get clicked.
     sheet.addEventListener('pointerdown', (e) => this.pointerDown(e));
-    sheet.addEventListener('pointermove', (e) => this.pointerMove(e));
-    sheet.addEventListener('pointerup', (e) => this.pointerUp(e, false));
-    sheet.addEventListener('pointercancel', (e) => this.pointerUp(e, true));
+    window.addEventListener('pointermove', (e) => this.pointerMove(e));
+    window.addEventListener('pointerup', (e) => this.pointerUp(e, false));
+    window.addEventListener('pointercancel', (e) => this.pointerUp(e, true));
     // A drag that started on a button must not also press it.
     sheet.addEventListener(
       'click',
@@ -281,6 +283,8 @@ export class BottomSheet {
         return false;
       }
       g.state = 'drag';
+      // Mouse and pen: keep the drag even if the pointer leaves the sheet.
+      if (g.kind === 'pointer') this.capture(g.id);
       // Start from here, so the sheet doesn't jump by the slop distance.
       g.startY = y;
       g.startOffset = this.offset;
@@ -379,7 +383,14 @@ export class BottomSheet {
   private pointerDown(e: PointerEvent): void {
     if (e.pointerType === 'touch' || e.button !== 0 || this.gesture) return;
     this.begin('pointer', e.pointerId, e.clientX, e.clientY, e.target);
-    if (this.gesture) this.sheet.setPointerCapture(e.pointerId);
+  }
+
+  private capture(pointerId: number): void {
+    try {
+      this.sheet.setPointerCapture(pointerId);
+    } catch {
+      // The pointer is already up; the window still hears its release.
+    }
   }
 
   private pointerMove(e: PointerEvent): void {
