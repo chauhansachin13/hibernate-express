@@ -3,6 +3,7 @@ import { formatDistance } from '../core/format';
 import { haversine, type LatLng } from '../core/geo';
 import type { PlaceSuggestion, PlacesProvider } from '../services/google';
 import { stagger } from './fx';
+import { LINES, pick } from './fun';
 import { icon, kindIcon } from './icons';
 
 export interface SearchBoxOptions {
@@ -120,7 +121,7 @@ export class SearchBox {
       if (ctrl.signal.aborted) return;
       // Free hosting sleeps when idle: if the server is still waking up, wait for it and retry once.
       if (!retried && err instanceof ApiError && (err.status === 0 || err.status >= 500)) {
-        this.o.status.textContent = 'Waking up the server — up to a minute after a quiet spell…';
+        this.status = 'Waking up the server — up to a minute after a quiet spell…';
         this.open();
         const awake = await api.wake();
         if (ctrl.signal.aborted) return;
@@ -131,7 +132,7 @@ export class SearchBox {
       }
       this.rows = [];
       this.o.list.replaceChildren();
-      this.o.status.textContent = "Search isn't reachable right now. Press Enter to retry, or tap the map.";
+      this.status = "Search isn't reachable right now. Press Enter to retry, or tap the map.";
       this.open();
     }
   }
@@ -165,14 +166,21 @@ export class SearchBox {
     this.active = suggestions.length ? 0 : -1;
     this.o.list.replaceChildren(...items);
     stagger(this.o.list);
-    this.o.status.textContent = suggestions.length ? '' : `Google found nothing for “${q}”. Check the spelling, or tap the map.`;
+    this.status = suggestions.length ? '' : `Google found nothing for “${q}”. Check the spelling, or tap the map.`;
     this.open();
     this.highlightActive();
     return true;
   }
 
+  /** The line under the search box (a plain message; the loading joke sets its own look). */
+  private set status(text: string) {
+    this.o.status.classList.remove('is-fun');
+    this.o.status.textContent = text;
+  }
+
   private showLoading(): void {
-    this.o.status.textContent = '';
+    this.status = pick(LINES.searching);
+    this.o.status.classList.add('is-fun');
     this.o.list.replaceChildren(
       ...[0, 1, 2, 3].map(() => {
         const li = document.createElement('li');
@@ -194,7 +202,7 @@ export class SearchBox {
     }
     this.rows = recents.map((place) => ({ type: 'place', place }));
     this.active = -1;
-    this.o.status.textContent = '';
+    this.status = '';
     const head = document.createElement('li');
     head.className = 'search-head';
     head.setAttribute('role', 'presentation');
@@ -237,7 +245,7 @@ export class SearchBox {
           ? `No places found for “${q}” in the open map data. Find it on Google Maps below, or tap the map.`
           : `No quick matches for “${q}” — search more places, or find it on Google Maps below.`);
     }
-    this.o.status.textContent = status;
+    this.status = status;
     this.open();
     this.highlightActive();
   }
@@ -296,7 +304,7 @@ export class SearchBox {
   private openGoogleMaps(): void {
     const q = this.o.input.value.trim();
     window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`, '_blank', 'noopener');
-    this.o.status.textContent = 'In Google Maps: open the place, tap Share → Copy link, then come back and tap “Paste a Google Maps link”.';
+    this.status = 'In Google Maps: open the place, tap Share → Copy link, then come back and tap “Paste a Google Maps link”.';
   }
 
   private async pasteLink(): Promise<void> {
@@ -307,7 +315,7 @@ export class SearchBox {
       text = '';
     }
     if (!LINK.test(text) && !/-?\d{1,2}\.\d+\s*,\s*-?\d{1,3}\.\d+/.test(text)) {
-      this.o.status.textContent = text
+      this.status = text
         ? "That isn't a map link. In Google Maps tap Share → Copy link, then try again."
         : 'Copy the link in Google Maps (Share → Copy link), then tap here — or long-press the search box and paste.';
       this.o.input.focus();
@@ -402,7 +410,7 @@ export class SearchBox {
         .resolve(row.suggestion.id)
         .then((place) => this.o.onSelect(place))
         .catch(() => {
-          this.o.status.textContent = "Couldn't open that place. Try again, or tap the map.";
+          this.status = "Couldn't open that place. Try again, or tap the map.";
           this.open();
         });
       return;

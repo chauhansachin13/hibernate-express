@@ -3821,3 +3821,467 @@ path.hx-route-glow {
   text-align: right;
   list-style: none;
 }
+
+/* ================================================================ fun & games
+   Speech bubbles, emoji bursts, a jelly squish on taps and a sleepy bear. Transform and opacity
+   only, so they stay smooth on phones. "Reduce motion" stops them (see the rule further up), and
+   bubbles then simply appear and go. */
+
+.fun-bubble {
+  position: absolute;
+  z-index: 7000;
+  max-width: min(260px, 80vw);
+  padding: 7px 12px;
+  border-radius: 16px;
+  background: #fde68a;
+  color: #3b2300;
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
+  box-shadow: 0 10px 24px -6px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+  animation: bubble-float var(--ms, 2400ms) var(--ease-out) forwards;
+}
+
+.fun-bubble::after {
+  content: '';
+  position: absolute;
+  left: calc(50% + var(--arrow, 0px));
+  bottom: -5px;
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  background: inherit;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.fun-bubble.tone-ok {
+  background: #99f6e4;
+  color: #042f2e;
+}
+
+.fun-bubble.tone-night {
+  background: #1e293b;
+  color: #94a3b8;
+}
+
+.fun-bubble.still {
+  animation: none;
+  transform: translate(-50%, -130%);
+}
+
+@keyframes bubble-float {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -70%) scale(0.5);
+  }
+  10% {
+    opacity: 1;
+    transform: translate(-50%, -125%) scale(1.08);
+  }
+  18% {
+    transform: translate(-50%, -118%) scale(1);
+  }
+  82% {
+    opacity: 1;
+    transform: translate(-50%, -150%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -180%) scale(0.92);
+  }
+}
+
+.fun-particle {
+  position: absolute;
+  z-index: 7000;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: particle-fly 1.5s cubic-bezier(0.2, 0.8, 0.25, 1) var(--d, 0ms) forwards;
+}
+
+@keyframes particle-fly {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+  14% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + 40px)) rotate(var(--rot)) scale(1.05);
+  }
+}
+
+/* Squishy, springy taps. */
+.jelly {
+  animation: jelly 0.5s cubic-bezier(0.3, 1.6, 0.45, 1) !important;
+}
+
+@keyframes jelly {
+  0% {
+    transform: scale(1, 1);
+  }
+  28% {
+    transform: scale(0.9, 1.08);
+  }
+  52% {
+    transform: scale(1.06, 0.95);
+  }
+  74% {
+    transform: scale(0.98, 1.02);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+/* The sleepy bear: breathes, blinks open now and then, and jumps when poked. */
+.fun-bear {
+  position: relative;
+  flex: none;
+  width: 52px;
+  height: 52px;
+  margin: -4px 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fun-bear svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transform-origin: 50% 90%;
+  animation: bear-breathe 3.4s ease-in-out infinite;
+}
+
+.fun-bear-open {
+  opacity: 0;
+  animation: bear-peek 9s steps(1) infinite;
+}
+
+.fun-bear-eyes {
+  animation: bear-shut 9s steps(1) infinite;
+}
+
+.fun-bear-mouth {
+  transform-origin: 32px 48.6px;
+  animation: bear-snore 3.4s ease-in-out infinite;
+}
+
+.fun-bear-z {
+  position: absolute;
+  right: 2px;
+  top: 4px;
+  color: #fde68a;
+  font: 800 11px/1 var(--display, sans-serif);
+  opacity: 0;
+  animation: z-float 3.4s ease-out infinite;
+}
+
+.fun-bear-z.z2 {
+  right: -5px;
+  top: -3px;
+  font-size: 13px;
+  animation-delay: 1.1s;
+}
+
+.fun-bear-z.z3 {
+  right: -12px;
+  top: -11px;
+  font-size: 15px;
+  animation-delay: 2.2s;
+}
+
+.fun-bear.poked svg {
+  animation: bear-jump 0.7s var(--spring);
+}
+
+.fun-bear.poked .fun-bear-open {
+  opacity: 1;
+  animation: none;
+}
+
+.fun-bear.poked .fun-bear-eyes {
+  opacity: 0;
+  animation: none;
+}
+
+@keyframes bear-breathe {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  50% {
+    transform: scale(1.04, 0.97);
+  }
+}
+
+@keyframes bear-snore {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.6, 1.9);
+  }
+}
+
+@keyframes bear-peek {
+  0%,
+  86% {
+    opacity: 0;
+  }
+  87%,
+  91% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 0;
+  }
+}
+
+@keyframes bear-shut {
+  0%,
+  86% {
+    opacity: 1;
+  }
+  87%,
+  91% {
+    opacity: 0;
+  }
+  92% {
+    opacity: 1;
+  }
+}
+
+@keyframes bear-jump {
+  0% {
+    transform: translateY(0) rotate(0);
+  }
+  30% {
+    transform: translateY(-14px) rotate(-8deg) scale(1.08);
+  }
+  55% {
+    transform: translateY(0) rotate(6deg) scale(0.96, 1.04);
+  }
+  75% {
+    transform: rotate(-3deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* The bus on the progress bar puffs smoke while it drives, and wiggles when it honks. */
+.track-bus.is-moving::before,
+.track-bus.is-moving::after {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 58%;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.55);
+  animation: exhaust 1.3s ease-out infinite;
+}
+
+.track-bus.is-moving::after {
+  animation-delay: 0.65s;
+}
+
+@keyframes exhaust {
+  0% {
+    opacity: 0.8;
+    transform: translate(0, 0) scale(0.5);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-22px, -10px) scale(1.8);
+  }
+}
+
+.track-bus.honk .i {
+  animation: honk 0.5s ease-in-out 2;
+}
+
+@keyframes honk {
+  0%,
+  100% {
+    transform: none;
+  }
+  25% {
+    transform: translateY(-4px) rotate(-8deg) scale(1.12);
+  }
+  50% {
+    transform: translateY(1px) rotate(5deg);
+  }
+  75% {
+    transform: translateY(-2px) rotate(-3deg) scale(1.06);
+  }
+}
+
+/* "Test" plays: little equaliser bars dance beside the speaker. */
+#testSoundBtn {
+  position: relative;
+}
+
+#testSoundBtn.playing::after {
+  content: '';
+  width: 14px;
+  height: 14px;
+  margin-left: 2px;
+  background:
+    linear-gradient(currentColor, currentColor) 0 100% / 3px 40% no-repeat,
+    linear-gradient(currentColor, currentColor) 5px 100% / 3px 90% no-repeat,
+    linear-gradient(currentColor, currentColor) 10px 100% / 3px 60% no-repeat;
+  animation: equalizer 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes equalizer {
+  0% {
+    background-size: 3px 30%, 3px 85%, 3px 55%;
+  }
+  50% {
+    background-size: 3px 95%, 3px 35%, 3px 80%;
+  }
+  100% {
+    background-size: 3px 55%, 3px 70%, 3px 25%;
+  }
+}
+
+/* Searching: the magnifier peeks around while the funny line shows. */
+.search-status.is-fun::before {
+  content: '🔎';
+  display: inline-block;
+  margin-right: 6px;
+  animation: peek-around 1.1s ease-in-out infinite;
+}
+
+@keyframes peek-around {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0);
+  }
+  25% {
+    transform: translateX(-3px) rotate(-12deg);
+  }
+  75% {
+    transform: translateX(3px) rotate(12deg);
+  }
+}
+
+/* The alarm: a clock that won't stop bouncing. */
+.alarm-content::before {
+  content: '⏰';
+  position: absolute;
+  top: calc(var(--safe-top, 0px) + 18px);
+  right: 22px;
+  font-size: 34px;
+  animation: clock-bounce 0.55s ease-in-out infinite alternate;
+}
+
+@keyframes clock-bounce {
+  0% {
+    transform: translateY(0) rotate(-14deg);
+  }
+  100% {
+    transform: translateY(-12px) rotate(14deg);
+  }
+}
+
+/* Night mode stays almost black (battery), with a dim moon, faint stars and a rare shooting star. */
+.night-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(1.4px 1.4px at 12% 18%, #334155 50%, transparent 52%),
+    radial-gradient(1.2px 1.2px at 78% 12%, #334155 50%, transparent 52%),
+    radial-gradient(1.6px 1.6px at 64% 34%, #1e293b 50%, transparent 52%),
+    radial-gradient(1.2px 1.2px at 30% 62%, #334155 50%, transparent 52%),
+    radial-gradient(1.4px 1.4px at 88% 70%, #1e293b 50%, transparent 52%),
+    radial-gradient(1.2px 1.2px at 46% 86%, #334155 50%, transparent 52%);
+  animation: twinkle 5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.night-overlay::after {
+  content: '';
+  position: absolute;
+  top: 14%;
+  left: -10%;
+  width: 90px;
+  height: 1.5px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #475569);
+  opacity: 0;
+  transform: rotate(18deg);
+  animation: shooting-star 13s ease-in 4s infinite;
+  pointer-events: none;
+}
+
+@keyframes shooting-star {
+  0%,
+  92% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(18deg);
+  }
+  94% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(130vw, 42vw) rotate(18deg);
+  }
+}
+
+.night-inner::before {
+  content: '🌙';
+  margin-bottom: 14px;
+  font-size: 30px;
+  opacity: 0.32;
+  filter: grayscale(0.4);
+  animation: moon-rock 6s ease-in-out infinite;
+}
+
+@keyframes moon-rock {
+  0%,
+  100% {
+    transform: rotate(-10deg);
+  }
+  50% {
+    transform: rotate(10deg) translateY(-4px);
+  }
+}
+
+/* Toasts arrive with a little hop. */
+.toast:not([hidden]) #toastText {
+  display: inline-block;
+  animation: toast-hop 0.6s var(--spring) backwards;
+}
+
+@keyframes toast-hop {
+  0% {
+    transform: translateY(8px) scale(0.9);
+  }
+  60% {
+    transform: translateY(-3px) scale(1.03);
+  }
+  100% {
+    transform: none;
+  }
+}

@@ -28,6 +28,7 @@ import { getCurrentFix, LocationError } from './services/location';
 import { enableScreenOffAlarm, isIos, type ScreenOffAlarm } from './services/push';
 import { TripClient, type TripState } from './trip-client';
 import { confetti, haptic, installRipples, prefersReducedMotion, revealOnScroll, stagger, tweenNumber, typewriter } from './ui/fx';
+import { bubble, burst, installJelly, LINES, pick, sleepyBear } from './ui/fun';
 import { icon, kindIcon } from './ui/icons';
 import type { MapStyle } from './ui/map-view';
 import { SmartMap } from './ui/smart-map';
@@ -63,6 +64,9 @@ interface ActiveTrip {
   celebrated: boolean;
   bgNotified: boolean;
   batteryWarned?: boolean;
+  /** Last progress milestone the bus honked for (25/50/75/90 %). */
+  milestone?: number;
+  gpsJoked?: boolean;
   joke: string;
 }
 
@@ -185,6 +189,8 @@ export class App {
   private notifyAsk: Promise<unknown> = Promise.resolve();
   /** Whether the alarm reaches this phone with the screen off (push from the server). */
   private screenOff: ScreenOffAlarm | null = null;
+  /** Repeating emoji bursts while the alarm rings. */
+  private ringFx = 0;
   /** Battery, where the browser tells (Android Chrome): a flat phone rings no alarm. */
   private battery: { level: number; charging: boolean } | null = null;
   private renderedDestKey = '';
@@ -220,6 +226,7 @@ export class App {
       if (this.app.scrollTop || this.app.scrollLeft) this.app.scrollTo(0, 0);
     });
     installRipples(this.app);
+    installJelly(this.app);
     this.bindPlanner();
     this.bindRide();
     this.bindAbout();
@@ -380,15 +387,23 @@ export class App {
       this.settings.mode = value === 'rail' ? 'rail' : 'road';
       if (this.settings.mode === 'rail') this.map.setPreviewRoute(null);
       this.saveSettings();
+      const seg = el('modeGroup').querySelector(`[data-value="${value}"]`);
+      if (seg) bubble(seg, pick(this.settings.mode === 'rail' ? LINES.train : LINES.bus), { tone: 'ok', ms: 1800 });
       void this.refreshPreview();
     });
     bindRadio(el('distGroup'), (value) => {
       this.settings.distanceM = Number(value);
       this.saveSettings();
+      const quip = { 500: 'Living on the edge 😅', 5000: 'Plenty of time to wake up ☕', 10000: 'Early bird gets the stop 🐦' }[this.settings.distanceM];
+      const chip = el('distGroup').querySelector(`[data-value="${value}"]`);
+      if (quip && chip) bubble(chip, quip, { ms: 1900 });
     });
     bindRadio(el('timeGroup'), (value) => {
       this.settings.timeMin = Number(value);
       this.saveSettings();
+      const quip = { 0: 'Distance only, got it 📏', 5: 'Speed-run wake up ⚡', 30: 'Time for a full dream 🛌' }[this.settings.timeMin];
+      const chip = el('timeGroup').querySelector(`[data-value="${value}"]`);
+      if (quip && chip) bubble(chip, quip, { ms: 1900 });
     });
 
     const sound = el<HTMLSelectElement>('soundSelect');
@@ -402,6 +417,13 @@ export class App {
       test.classList.add('playing');
       void this.alarm.preview(this.settings.sound, this.settings.vibrate);
       window.setTimeout(() => test.classList.remove('playing'), 2600);
+      if (this.settings.sound === 'kumbhakaran') {
+        burst(test, ['🥁', '📯', '🐘', '💥'], 12, 140);
+        replay(this.app, 'ringing');
+        bubble(test, 'Even Kumbhakaran just woke up 🐘', { ms: 2600 });
+      } else {
+        bubble(test, pick(['Loud enough? 🔊', 'Volume up! 📢', 'That will do it 🔔']), { ms: 1900 });
+      }
     });
     el<HTMLInputElement>('vibrateToggle').addEventListener('change', (e) => {
       this.settings.vibrate = (e.target as HTMLInputElement).checked;
@@ -623,7 +645,7 @@ export class App {
       name.textContent = 'Where are you getting off?';
       detail.textContent = 'Search above, tap the map, or pick a recent stop.';
       info.append(name, detail);
-      body.append(kind, info);
+      body.append(sleepyBear(), info);
       return body;
     }
     name.textContent = dest.name;
@@ -868,6 +890,8 @@ export class App {
     const b = from.getBoundingClientRect();
     box.style.setProperty('--x', `${b.left + b.width / 2 - a.left}px`);
     box.style.setProperty('--y', `${b.top + b.height / 2 - a.top}px`);
+    box.querySelector('.launch-text')!.textContent = pick(LINES.start);
+    burst(from, ['🪶', '💤', '🛏️', '😴'], 12, 150);
     box.hidden = false;
     replay(box, 'go');
     window.setTimeout(() => {
@@ -1050,6 +1074,8 @@ export class App {
       const trip = this.trip;
       if (!trip) return;
       const reason = trip.ringing;
+      burst(el('awakeBtn'), ['☀️', '✨', '🌅', '💪'], 14, 160);
+      if (reason !== 'arrival') this.toast(pick(LINES.awake), 'ok', 2600);
       trip.client?.acknowledge();
       if (reason === 'arrival') {
         if (!trip.celebrated) this.celebrate(trip);
@@ -1061,8 +1087,9 @@ export class App {
       }
     });
     el('snoozeBtn').addEventListener('click', () => {
+      burst(el('snoozeBtn'), ['💤', '🪶', '🛏️', '😴'], 12, 140);
       this.trip?.client?.snooze();
-      this.toast('Snoozed for 2 minutes 😴', 'ok', 3000);
+      this.toast(`${pick(LINES.snooze)} · back in 2 min`, 'ok', 3200);
     });
 
     document.addEventListener('keydown', (e) => {
@@ -1106,6 +1133,30 @@ export class App {
       this.fillAlarmText(trip, state);
     }
     if (state.snapshot.phase === 'arrived' && !trip.celebrated) this.celebrate(trip);
+  }
+
+  private ridePaneVisible(): boolean {
+    return el('alarmOverlay').hidden && !this.nightMode;
+  }
+
+  /** The bus honks with a joke at 25, 50, 75 and 90 % of the way, and quips when GPS drops out. */
+  private cheer(trip: ActiveTrip, pct: number, gpsLost: boolean): void {
+    const reached = [25, 50, 75, 90].filter((m) => pct >= m).pop() ?? 0;
+    if (trip.milestone === undefined) {
+      trip.milestone = reached; // resumed mid-trip: no honking for what already passed
+    } else if (reached > trip.milestone) {
+      trip.milestone = reached;
+      const bus = el('trackBus');
+      replay(bus, 'honk');
+      // Never on top of the alarm or the night screen: those need to be read.
+      if (this.ridePaneVisible()) bubble(bus, LINES.milestone[reached]);
+    }
+    if (gpsLost && !trip.gpsJoked) {
+      trip.gpsJoked = true;
+      if (this.ridePaneVisible()) bubble(el('livePill'), pick(LINES.gpsLost), { ms: 3200 });
+    } else if (!gpsLost) {
+      trip.gpsJoked = false;
+    }
   }
 
   private renderRide(trip: ActiveTrip, state: TripState): void {
@@ -1158,7 +1209,10 @@ export class App {
     const progress = s.phase === 'arrived' ? 1 : clamp(s.progress, 0, 1);
     const pct = Math.round(progress * 1000) / 10;
     el('trackFill').style.width = `${pct}%`;
-    el('trackBus').style.left = `${pct}%`;
+    const bus = el('trackBus');
+    bus.style.left = `${pct}%`;
+    bus.classList.toggle('is-moving', (s.speedMps ?? 0) > 1 && s.phase !== 'arrived');
+    this.cheer(trip, pct, s.gpsLost);
     el('track').setAttribute('aria-valuenow', String(Math.round(pct)));
     el('progressText').textContent = s.phase === 'arrived' ? 'Arrived 🎉' : `${Math.round(pct)}% of the way`;
     const bell = el('trackBell');
@@ -1275,6 +1329,12 @@ export class App {
     if (this.nightMode) this.setNight(false);
     el('alarmOverlay').hidden = false;
     replay(this.app, 'ringing');
+    // Things keep flying out of the bell until you answer (drums and an elephant for Kumbhakaran).
+    const bell = el('alarmOverlay').querySelector('.alarm-bell') ?? el('awakeBtn');
+    const things = trip.settings.sound === 'kumbhakaran' ? ['🥁', '📯', '🐘', '💥'] : ['⏰', '🔔', '📢', '💥'];
+    window.clearInterval(this.ringFx);
+    burst(bell, things, 12, 160);
+    this.ringFx = window.setInterval(() => burst(bell, things, 8, 150), 3200);
     const arrival = state.ringing === 'arrival';
     el('snoozeBtn').hidden = arrival;
     el('awakeBtn').textContent = arrival ? (trip.demo ? 'Finish demo 🎉' : "I'm awake — end trip") : "I'm awake";
@@ -1290,6 +1350,8 @@ export class App {
   }
 
   private stopRinging(trip: ActiveTrip): void {
+    window.clearInterval(this.ringFx);
+    this.ringFx = 0;
     this.alarm.stop();
     el('alarmOverlay').hidden = true;
     this.app.classList.remove('ringing');
@@ -1326,6 +1388,9 @@ export class App {
     trip.celebrated = true;
     confetti(el<HTMLCanvasElement>('confetti'));
     haptic([30, 60, 30, 60, 120]);
+    const from = el('alarmOverlay').hidden ? el('trackBus') : (el('alarmOverlay').querySelector('.alarm-bell') ?? el('trackBus'));
+    burst(from, ['🎉', '🥳', '🎒', '🚌'], 16, 180);
+    bubble(from, pick(LINES.arrival), { ms: 3000 });
   }
 
   private setNight(on: boolean): void {
