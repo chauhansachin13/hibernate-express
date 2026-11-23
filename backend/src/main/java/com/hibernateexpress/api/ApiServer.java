@@ -180,11 +180,14 @@ public final class ApiServer {
       TripSnapshot snap = session.refresh(wall);
       if (!session.pushDue(snap.ringing(), wall)) return;
       byte[] message = Json.stringify(alarmMessage(id, session, snap, sub)).getBytes(StandardCharsets.UTF_8);
+      String reason = snap.ringing().json();
+      String service = java.net.URI.create(sub.endpoint()).getHost();
       pushSender
           .send(webPush.request(sub, message, 120, wall / 1000))
           .thenAccept(status -> {
+            // One line per screen-off alarm (no trip id or location): proof it went, and why not.
+            LOG.info("Screen-off alarm (" + reason + ") sent via " + service + ": answered " + status);
             if (status == 404 || status == 410) session.dropPush(sub);
-            else if (status >= 400) LOG.info("Push service answered " + status);
           })
           .exceptionally(e -> {
             LOG.info("Push failed: " + e);
