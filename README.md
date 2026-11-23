@@ -151,6 +151,13 @@ flowchart LR
   places, plus codes and map links. The public Photon server refuses search requests from cloud hosts
   such as Render, while reverse look-ups and OSRM routing work there. When the server needs another
   place found first ("Ameerpet" in "atm in ameerpet"), it says so and the phone asks once more.
+- **Google mode** (`frontend/src/services/google.ts`, `ui/google-map-view.ts`, `ui/smart-map.ts`): with
+  a Google Maps key, the app runs on Google's map, and place names are searched with Google Places, so
+  even small shops and lanes are found. Links, coordinates and plus codes still go to the Java server.
+  Without a key, or if Google refuses it, the app uses OpenStreetMap as before.
+- **Screen off** (`push/WebPush.java`, `public/sw.js`): phones pause web pages when locked. The
+  server keeps counting down and sends the alarm as a push notification, again every 30 s until it is
+  answered. Its "I'm awake" and "Snooze" buttons work from the lock screen.
 
 ## Project layout
 
@@ -259,11 +266,20 @@ environment settings:
 | `PORT` | The port to listen on |
 | `HX_ALLOWED_ORIGIN` | The app's origin, for CORS |
 | `HX_STATIC` | A folder of built app files, to also serve the app |
+| `HX_VAPID_PUBLIC`, `HX_VAPID_PRIVATE` | Optional fixed push keys, so phone subscriptions survive restarts |
+
+**Google mode:** create a Maps Platform key with these settings:
+
+- **Services:** Maps JavaScript API and Places API (New).
+- **Websites:** restricted to the app's address (and `http://localhost:5180/*` for development).
+- **Where it goes:** `frontend/.env.local` (never committed), as `VITE_GOOGLE_MAPS_KEY=...`.
+
+The build bakes the key in. Without a key, the build leaves the Google code out.
 
 ## Tips for a perfect nap
 
-- Keep Hibernate Express open — browsers pause web pages when the phone is locked, so the app keeps the
-  screen awake during a trip. Use **Night mode** to save battery, and plug in on long rides.
+- Allow notifications: then the alarm reaches you even if the phone locks. For the loudest alarm keep
+  Hibernate Express open (it keeps the screen awake); **Night mode** saves battery. Plug in on long rides.
 - Turn the media volume up. On iPhone, *Share → Add to Home Screen* to also get notifications.
 - 2 km or 10 minutes is a good default for buses.
 
@@ -273,8 +289,11 @@ No account and no analytics.
 
 - **GPS:** during a trip, the Hibernate Express server receives your GPS positions to follow you
   along the road. The trip is deleted when it ends, or after 3 hours idle.
-- **Search:** what you type goes from your phone to Photon (komoot) and to the server. A thorough
-  search ("Search more places") also asks Nominatim.
+- **Search:** in Google mode, place names you type go from your phone to Google Places. Otherwise
+  they go to Photon (komoot) and to the server; a thorough search ("Search more places") also asks
+  Nominatim.
+- **Map:** in Google mode the map comes from Google; otherwise its tiles come from OpenStreetMap.
+- **Push:** the screen-off alarm goes through your browser's push service (Google, Mozilla or Apple).
 - **Routing:** a trip's start and end go to OSRM through the server.
 - **Map links:** short Google Maps links you paste are expanded by asking Google.
 

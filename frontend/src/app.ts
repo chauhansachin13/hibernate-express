@@ -29,7 +29,9 @@ import { enableScreenOffAlarm, isIos, type ScreenOffAlarm } from './services/pus
 import { TripClient, type TripState } from './trip-client';
 import { confetti, haptic, installRipples, prefersReducedMotion, revealOnScroll, stagger, tweenNumber, typewriter } from './ui/fx';
 import { icon, kindIcon } from './ui/icons';
-import { MapView, type MapStyle } from './ui/map-view';
+import type { MapStyle } from './ui/map-view';
+import { SmartMap } from './ui/smart-map';
+import { googlePlaces, type PlacesProvider } from './services/google';
 import { SearchBox } from './ui/search-box';
 import { BottomSheet, type Snap } from './ui/sheet';
 
@@ -193,8 +195,10 @@ export class App {
   private readonly app = el('app');
   private readonly sheetBody = el('sheetBody');
   private readonly sheet: BottomSheet;
-  private readonly map: MapView;
+  private readonly map: SmartMap;
   private search!: SearchBox;
+  /** Google's place search, once Google's map is up (when a Google key is configured). */
+  private places: PlacesProvider | null = null;
 
   constructor() {
     this.sheet = new BottomSheet(el('sheet'), el('sheetHandle'), this.sheetBody, this.app, {
@@ -202,7 +206,10 @@ export class App {
       onChange: (snap) => this.onSnap(snap),
     });
     const style: MapStyle = loadJSON<MapStyle>(KEYS.mapStyle, 'dark') === 'light' ? 'light' : 'dark';
-    this.map = new MapView(el('map'), style, () => this.sheet.visibleHeight);
+    this.map = new SmartMap(el('map'), style, () => this.sheet.visibleHeight);
+    void this.map.google().then((g) => {
+      if (g) this.places = googlePlaces(g);
+    });
   }
 
   start(): void {
@@ -331,6 +338,7 @@ export class App {
       getBias: () => (this.userFix ? { lat: this.userFix.lat, lng: this.userFix.lng, zoom: 12 } : this.map.bias()),
       getUser: () => this.userFix,
       getRecents: () => loadJSON<unknown[]>(KEYS.recents, []).filter(isPlace),
+      getPlaces: () => this.places,
       // Coordinates, links and plus codes become a pin that's then named from the map.
       onSelect: (place) => (place.kind === 'pin' ? this.dropPin(place, true) : this.setDestination(place, true)),
       onOpenChange: (open) => {

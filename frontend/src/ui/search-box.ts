@@ -1,6 +1,7 @@
 import { api, ApiError, wantsPhoton, type Place, type SearchResult } from '../api';
 import { formatDistance } from '../core/format';
 import { haversine, type LatLng } from '../core/geo';
+import type { PlaceSuggestion, PlacesProvider } from '../services/google';
 import { stagger } from './fx';
 import { icon, kindIcon } from './icons';
 
@@ -15,11 +16,18 @@ export interface SearchBoxOptions {
   getUser?: () => LatLng | null;
   /** Shown when the box is focused but empty, like a map app's history. */
   getRecents?: () => Place[];
+  /** Google's place search, when the app runs on Google Maps (every place Google knows). */
+  getPlaces?: () => PlacesProvider | null;
   onSelect: (place: Place) => void;
   onOpenChange?: (open: boolean) => void;
 }
 
-type Row = { type: 'place'; place: Place } | { type: 'more' } | { type: 'google' } | { type: 'paste' };
+type Row =
+  | { type: 'place'; place: Place }
+  | { type: 'gplace'; suggestion: PlaceSuggestion }
+  | { type: 'more' }
+  | { type: 'google' }
+  | { type: 'paste' };
 
 const MIN_CHARS = 2;
 const WORD = /[\p{L}\p{N}]/u;
@@ -32,6 +40,7 @@ const LINK = /https?:\/\/|maps\.app\.goo\.gl|goo\.gl\/maps/i;
 export class SearchBox {
   private readonly o: SearchBoxOptions;
   private readonly cache = new Map<string, SearchResult>();
+  private readonly googleCache = new Map<string, PlaceSuggestion[]>();
   private rows: Row[] = [];
   private active = -1;
   private timer = 0;
@@ -86,6 +95,8 @@ export class SearchBox {
   }
 
   private async run(q: string, explicit: boolean, retried = false): Promise<void> {
+    const places = this.o.getPlaces?.() ?? null;
+    if (places && wantsPhoton(q) && (await this.runGoogle(q, places))) return;
     const key = `${explicit ? '!' : ''}${q.toLowerCase()}`;
     const cached = this.cache.get(key);
     if (cached) {
@@ -123,6 +134,41 @@ export class SearchBox {
       this.o.status.textContent = "Search isn't reachable right now. Press Enter to retry, or tap the map.";
       this.open();
     }
+  }
+
+  /** Google's place search (true when it answered; false falls back to the app's own search). */
+  private async runGoogle(q: string, places: PlacesProvider): Promise<boolean> {
+    const key = `g|${q.toLowerCase()}`;
+    let suggestions = this.googleCache.get(key);
+    this.controller?.abort();
+    const ctrl = new AbortController();
+    this.controller = ctrl;
+    if (!suggestions) {
+      this.showLoading();
+      try {
+        suggestions = await places.suggest(q, this.o.getBias(), this.o.getUser?.() ?? null);
+      } catch {
+        return false;
+      }
+      if (ctrl.signal.aborted) return true;
+      this.googleCache.set(key, suggestions);
+    }
+    this.rows = suggestions.map((suggestion) => ({ type: 'gplace', suggestion }));
+    const items: HTMLElement[] = suggestions.map((s, i) =>
+      this.option({ name: s.name, detail: s.detail, kind: s.kind, category: s.category, lat: NaN, lng: NaN } as Place, q, i, undefined, s.distanceM),
+    );
+    const credit = document.createElement('li');
+    credit.className = 'search-credit';
+    credit.setAttribute('role', 'presentation');
+    credit.textContent = 'Places by Google';
+    items.push(credit);
+    this.active = suggestions.length ? 0 : -1;
+    this.o.list.replaceChildren(...items);
+    stagger(this.o.list);
+    this.o.status.textContent = suggestions.length ? '' : `Google found nothing for “${q}”. Check the spelling, or tap the map.`;
+    this.open();
+    this.highlightActive();
+    return true;
   }
 
   private showLoading(): void {
@@ -196,7 +242,8 @@ export class SearchBox {
     this.highlightActive();
   }
 
-  private option(place: Place, q: string, index: number, iconId?: string): HTMLLIElement {
+  /** One result row; `distanceM` overrides the distance (Google tells it, null = don't show one). */
+  private option(place: Place, q: string, index: number, iconId?: string, distanceM?: number | null): HTMLLIElement {
     const li = document.createElement('li');
     li.id = `hx-result-${index}`;
     li.className = 'search-option';
@@ -222,10 +269,11 @@ export class SearchBox {
     text.append(name, meta);
     li.append(kind, text);
     const user = this.o.getUser?.();
-    if (user && place.kind !== 'pin') {
+    const metres = distanceM !== undefined ? distanceM : user && place.kind !== 'pin' ? haversine(user, place) : null;
+    if (metres !== null && Number.isFinite(metres)) {
       const dist = document.createElement('span');
       dist.className = 'search-dist';
-      dist.textContent = formatDistance(haversine(user, place));
+      dist.textContent = formatDistance(metres);
       li.append(dist);
     }
     li.addEventListener('click', () => this.choose(index));
@@ -342,6 +390,21 @@ export class SearchBox {
     }
     if (row.type === 'paste') {
       void this.pasteLink();
+      return;
+    }
+    if (row.type === 'gplace') {
+      const places = this.o.getPlaces?.();
+      if (!places) return;
+      this.setValue(row.suggestion.name);
+      this.close();
+      this.o.input.blur();
+      places
+        .resolve(row.suggestion.id)
+        .then((place) => this.o.onSelect(place))
+        .catch(() => {
+          this.o.status.textContent = "Couldn't open that place. Try again, or tap the map.";
+          this.open();
+        });
       return;
     }
     this.setValue(row.place.name);
